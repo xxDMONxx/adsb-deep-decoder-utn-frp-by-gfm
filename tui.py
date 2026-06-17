@@ -60,7 +60,15 @@ class TUIDashboard:
         # --- HEADER ---
         now_str = strftime('%H:%M:%S', localtime())
         status_txt = "● PAUSADO " if self.paused else "● ONLINE  "
-        header_text = f" ADS-B RECEIVER v{self.version}                              {status_txt}                           {now_str} "
+        title = f"AERO-LITORAL 26 - UTN-FRP | Dev: Moreira, G.F. | v{self.version}"
+        
+        rem = w - len(title) - len(status_txt) - len(now_str)
+        if rem > 0:
+            pad1 = rem // 2
+            pad2 = rem - pad1
+            header_text = f" {title}{' ' * (pad1-1)}{status_txt}{' ' * pad2}{now_str} "
+        else:
+            header_text = f" {title} {status_txt} {now_str} "[:w]
         lines.append(f"┌{'─' * w}┐")
         lines.append(f"│{header_text:<{w}}│")
         lines.append(f"├{'─' * w}┤")
