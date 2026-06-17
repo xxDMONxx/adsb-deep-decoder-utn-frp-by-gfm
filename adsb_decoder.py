@@ -41,6 +41,12 @@ import os
 from time import time, strftime, localtime, sleep
 from typing import Optional, Dict, Tuple, Any
 from collections import defaultdict
+import msvcrt
+
+try:
+    from tui import TUIDashboard
+except ImportError:
+    pass
 
 # =============================================================================
 # Colores ANSI para salida de consola
@@ -1024,91 +1030,7 @@ def format_output(data: dict, show_deep: bool = True) -> str:
     return '\n'.join(lines)
 
 
-def format_aircraft_summary(aircraft: Dict[str, AircraftState]) -> str:
-    """Genera un resumen de todas las aeronaves rastreadas usando el Sistema Métrico."""
-    # Filtro anti-fantasmas: requerir al menos 2 mensajes para considerar real a la aeronave
-    real_aircraft = {icao: ac for icao, ac in aircraft.items() if ac.msg_count >= 2}
-
-    if not real_aircraft:
-        return f"{C.DIM}  Buscando aeronaves válidas (filtrando ruido)...{C.RESET}"
-
-    # Ordenar por el PRIMER mensaje recibido (first_seen), cronológicamente ascendente
-    sorted_acs = sorted(real_aircraft.items(), key=lambda x: x[1].first_seen)
-
-    lines = [
-        f"{C.CYAN}{'=' * 95}{C.RESET}",
-        f"{C.BOLD}{C.CYAN}  AERONAVES RASTREADAS HISTÓRICAMENTE: {len(real_aircraft)} (Filtradas por ruido: {len(aircraft) - len(real_aircraft)}){C.RESET}",
-        f"{C.CYAN}{'=' * 95}{C.RESET}",
-        f"  {C.DIM}{'ESTADO':<10s}  {'ICAO':>6s}  {'Vuelo':>8s}  {'Alt(m)':>7s}  "
-        f"{'Vel(km/h)':>9s}  {'Rumbo':>5s}  {'VRate':>6s}  "
-        f"{'Posición':>24s}  {'Visto a las':>11s}{C.RESET}",
-    ]
-
-    for icao, ac in sorted_acs:
-        # Lógica de estados (Activa, Inactiva, Perdida)
-        age_sec = ac.age()
-        if age_sec < 60:
-            estado = f"{C.GREEN}Activa    {C.RESET}"
-            row_color = C.WHITE
-        elif age_sec < 300:
-            estado = f"{C.YELLOW}Inactiva  {C.RESET}"
-            row_color = C.DIM
-        else:
-            estado = f"{C.RED}Perdida   {C.RESET}"
-            row_color = C.DIM
-
-        cs = ac.callsign or '---'
-        # Conversiones SIMELA (Argentina)
-        alt = f'{int(ac.altitude_baro * 0.3048)}' if ac.altitude_baro is not None else '---'
-        spd = f'{int(ac.speed * 1.852)}' if ac.speed is not None else '---'
-        hdg = f'{ac.heading:.0f}' if ac.heading is not None else '---'
-        vr = f'{int(ac.vertical_rate * 0.3048)}' if ac.vertical_rate is not None else '---'
-        
-        pos = format_position(ac.latitude, ac.longitude) if ac.latitude else '---'
-        first_seen_str = strftime('%H:%M:%S', localtime(ac.first_seen))
-
-        lines.append(
-            f"  {estado}  {row_color}{icao:>6s}  {cs:>8s}  {alt:>7s}  "
-            f"{spd:>9s}  {hdg:>5s}  {vr:>6s}  "
-            f"{pos:>24s}  {first_seen_str:>11s}{C.RESET}"
-        )
-
-    return '\n'.join(lines)
-
-
-def render_dashboard(decoder, source_mode: str, endpoint: str, event_log: list):
-    """Limpia la pantalla y dibuja el ATC Dashboard estático."""
-    # Limpiar pantalla y mover cursor arriba a la izquierda
-    sys.stdout.write("\033[2J\033[H")
-    
-    # Banner
-    print(f"{C.BOLD}{C.CYAN}+{'=' * 68}+")
-    print("|                                                                    |")
-    print("|         AERO-LITORAL 26 -- ADS-B / Mode-S ATC Dashboard            |")
-    print("|              Testbench Terrestre  -  CubeSat 1U                    |")
-    print("|                     UTN-FRP v2.2                                   |")
-    print("|                                                                    |")
-    print("+" + "=" * 68 + "+")
-    print(f"{C.RESET}  {C.WHITE}pyModeS version: {pyModeS.__version__}{C.RESET}")
-    print(f"{C.YELLOW}  [*]{C.RESET} Entrada: {C.BOLD}{source_mode}{C.RESET} | Endpoint: {endpoint}")
-    print()
-
-    # Estadísticas y Aeronaves
-    print(decoder.get_stats_summary())
-    print(format_aircraft_summary(decoder.aircraft))
-    print()
-    
-    # Log de Eventos Condensado
-    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
-    print(f"{C.BOLD}{C.CYAN}  ÚLTIMOS EVENTOS DE RADAR{C.RESET}")
-    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
-    if not event_log:
-        print(f"  {C.DIM}Esperando interceptar aeronaves...{C.RESET}")
-    else:
-        for event in event_log:
-            print(event)
-    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
-    sys.stdout.flush()
+# render_dashboard fue movido a tui.py
 
 
 def run_dump1090_mode(host: str, port: int):
@@ -1269,21 +1191,63 @@ def run_zmq_mode():
         return
 
     decoder = ADSBDecoder()
+    tui = TUIDashboard()
+    
     last_ui_update = 0.0
-    UI_UPDATE_INTERVAL = 0.5
+    UI_UPDATE_INTERVAL = 1.0 # 1 fps pedido por el user
     event_log = []
-    MAX_LOG_LINES = 12
+    MAX_LOG_LINES = 8
 
     try:
         while True:
-            # Renderizar UI a intervalo regular para actualizar relojes
+            # --- Manejo de Teclado Asincrono ---
+            if msvcrt.kbhit():
+                key = msvcrt.getch().decode('utf-8', 'ignore').lower()
+                if key == 'q':
+                    break
+                elif key == 'r':
+                    decoder.stats['total_received'] = 0
+                    decoder.stats['crc_ok'] = 0
+                    decoder.stats['crc_fail'] = 0
+                    decoder.stats['decode_error'] = 0
+                    decoder.stats['start_time'] = time()
+                elif key == 'p':
+                    tui.paused = not tui.paused
+                elif key == b'\xe0'.decode('utf-8', 'ignore'): # Flechas en windows mandan 0xE0 primero
+                    # es una tecla especial
+                    arr = msvcrt.getch()
+                    if arr == b'H': # Arriba
+                        if tui.page > 0:
+                            tui.page -= 1
+                    elif arr == b'P': # Abajo
+                        tui.page += 1
+                        
+            if tui.paused:
+                # Solo renderizamos si esta pausado (para ver el status), pero frenamos consumo? 
+                # No, si frenamos consumo se llena el buffer de ZMQ y droppea.
+                # Mejor seguimos consumiendo ZMQ pero no procesamos? O procesamos pero no actualizamos?
+                # Vamos a seguir consumiendo para no romper ZMQ, pero no hacemos render ni decodificamos profundo.
+                try:
+                    raw_data = subscriber.recv(flags=zmq.NOBLOCK)
+                except zmq.Again:
+                    pass
+                
+                now = time()
+                if now - last_ui_update >= UI_UPDATE_INTERVAL:
+                    tui.render(decoder, "ZMQ", event_log)
+                    last_ui_update = now
+                    
+                sleep(0.05)
+                continue
+
+            # Renderizar UI a intervalo regular
             now = time()
             if now - last_ui_update >= UI_UPDATE_INTERVAL:
-                render_dashboard(decoder, "GNU Radio (ZMQ PUB)", endpoint, event_log)
+                tui.render(decoder, "ZMQ", event_log)
                 last_ui_update = now
 
             try:
-                # Recepción NO BLOQUEANTE para no frenar la UI
+                # Recepción NO BLOQUEANTE para no frenar la UI ni el teclado
                 raw_data = subscriber.recv(flags=zmq.NOBLOCK)
                 pdu = pmt.deserialize_str(raw_data)
 
@@ -1325,30 +1289,21 @@ def run_zmq_mode():
 
             if result is not None:
                 icao = result.get('icao')
-                if icao and icao in decoder.aircraft and decoder.aircraft[icao].msg_count >= 2:
-                    # Formatear linea para el event log condensado
-                    ac = decoder.aircraft[icao]
-                    vuelo = ac.callsign or "---"
-                    df = result.get('df')
-                    desc = DF_DESCRIPTION.get(df, f"DF{df}")
-                    tc_str = f" | TC{result.get('tc')}" if result.get('tc') is not None else ""
-                    alt_str = f" | Alt: {int(ac.altitude_baro * 0.3048)}m" if ac.altitude_baro else ""
-                    log_line = f"  {C.DIM}[{result['timestamp_str']}]{C.RESET} {C.YELLOW}{icao}{C.RESET} ({vuelo}) | {C.CYAN}{desc}{tc_str}{C.RESET}{alt_str}"
+                if icao and icao in decoder.aircraft and decoder.aircraft[icao].msg_count == 2:
+                    # Nuevo avion confirmado! (paso filtro de fantasmas)
+                    event_log.append(f"{C.GREEN}[{result['timestamp_str']}] Nuevo avion detectado: {icao}{C.RESET}")
+                    if len(event_log) > MAX_LOG_LINES: event_log.pop(0)
                     
-                    event_log.append(log_line)
-                    if len(event_log) > MAX_LOG_LINES:
-                        event_log.pop(0)
-                        
-                    # Forzar refresco de UI inmediato si entra mensaje válido
-                    render_dashboard(decoder, "GNU Radio (ZMQ PUB)", endpoint, event_log)
-                    last_ui_update = time()
+                if icao and icao in decoder.aircraft and decoder.aircraft[icao].msg_count >= 2:
+                    # Opcionalmente reportar cambios de estado en log si es necesario
+                    # pero no saturar
+                    pass
 
     except KeyboardInterrupt:
         print(f"\n{C.YELLOW}  [*] Interrumpido por usuario.{C.RESET}")
     finally:
         print()
         print(decoder.get_stats_summary())
-        print(format_aircraft_summary(decoder.aircraft))
         print()
         print(f"{C.WHITE}  [*] Total mensajes procesados: "
               f"{decoder.stats['total_received']}{C.RESET}")
