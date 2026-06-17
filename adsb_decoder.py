@@ -38,7 +38,7 @@ from pyModeS.position import airborne_position_pair
 from pyModeS._bits import extract_unsigned
 import sys
 import os
-from time import time, strftime, localtime
+from time import time, strftime, localtime, sleep
 from typing import Optional, Dict, Tuple, Any
 from collections import defaultdict
 
@@ -1295,7 +1295,7 @@ def run_zmq_mode():
                     continue
 
             except zmq.Again:
-                time.sleep(0.05)
+                sleep(0.05)
                 continue
 
             except Exception:
