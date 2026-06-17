@@ -1,0 +1,124 @@
+======================================================================
+     Guía de Operación: Testbench Terrestre ADS-B
+     Proyecto: AERO-LITORAL 26 (CubeSat 1U) - v2.1
+======================================================================
+
+Descripción: 
+Sistema de recepción y decodificación profunda en tiempo real de tramas 
+ADS-B / Mode-S. Soporta dos modos de operación:
+  - Modo dump1090 (RECOMENDADO): Usa dump1090 como demodulador.
+  - Modo GNU Radio (Experimental): Usa el bloque adsb.demod de GR.
+Actualizado a pyModeS v3.x con resolución global CPR y mapas de bits.
+
+======================================================================
+ FASE 1: Requisitos e Instalación (Por única vez)
+======================================================================
+
+1. Requisitos de Hardware
+----------------------------------------------------------------------
+* Dongle USB: RTL-SDR (chipset RTL2832U + R820T).
+* Antena: Plano de tierra (Ground Plane) calibrada a ~6.8 cm para 
+  resonar en 1090 MHz. Debe tener línea de visión directa y estar lo 
+  más despejada posible de obstáculos.
+* Puerto USB: Conectar directo a la PC (evitar hubs USB).
+
+2. Requisitos de Software
+----------------------------------------------------------------------
+* Zadig (Driver WinUSB):
+  1. Conecta el RTL-SDR.
+  2. Abre Zadig, ve a "Options -> List All Devices".
+  3. Selecciona "Bulk-In, Interface (Interface 0)" o "RTL2838UHIDIR".
+  4. Instala el driver "WinUSB".
+
+* Radioconda:
+  El entorno oficial de SDR para Windows. Instala todo lo necesario 
+  (GNU Radio, SoapySDR y Python) sin tener que configurar nada a mano.
+
+* dump1090 (RECOMENDADO):
+  Demodulador ADS-B de alto rendimiento escrito en C. Descárgalo e 
+  instálalo. Asegúrate de que el ejecutable "dump1090" esté accesible 
+  desde la línea de comandos (agregar al PATH de Windows si es necesario).
+
+3. Instalación de Librerías de Python
+----------------------------------------------------------------------
+Para que el decodificador funcione, debes instalar pyzmq y pyModeS.
+1. Abre el menú Inicio de Windows y busca "Radioconda Prompt".
+2. Abre la consola y escribe este comando:
+   python -m pip install pyzmq "pyModeS>=3.0"
+3. Presiona Enter y espera a que termine.
+
+======================================================================
+ FASE 2: Cómo ejecutar el sistema en el día a día
+======================================================================
+
+El Testbench ha sido completamente automatizado. Ya no necesitas abrir 
+las terminales manualmente ni iniciar el entorno gráfico de GNU Radio.
+
+Paso Único: Ejecutar el Lanzador
+----------------------------------------------------------------------
+1. Ve a la carpeta de tu proyecto.
+2. Haz doble clic en el archivo "iniciar_radar.bat".
+3. El script te preguntará qué modo usar:
+   [1] dump1090 (RECOMENDADO) - Mejor detección de aviones.
+   [2] GNU Radio (Experimental) - Usa el bloque adsb.demod.
+4. Escribe 1 o 2 y presiona Enter.
+5. El lanzador abrirá automáticamente las ventanas necesarias.
+
+Ejecución Manual (Sin el .bat)
+----------------------------------------------------------------------
+Si prefieres ejecutar manualmente desde cualquier terminal:
+
+  Modo dump1090:
+  1. En una terminal: dump1090 --net --gain 49.6 --aggressive
+  2. En otra terminal: python adsb_decoder.py
+
+  Modo GNU Radio (desde Radioconda Prompt):
+  1. En una terminal: python adsb_rx_completo.py
+  2. En otra terminal: python adsb_decoder.py --zmq
+
+======================================================================
+ Archivos del Proyecto
+======================================================================
+
+* iniciar_radar.bat: 
+  Lanzador automatizado con menú para elegir modo de operación.
+
+* adsb_decoder.py: 
+  El cerebro del sistema (v2.1). Soporta dos modos de entrada:
+    - dump1090 TCP (default): python adsb_decoder.py
+    - GNU Radio ZMQ:          python adsb_decoder.py --zmq
+  Decodifica en profundidad todos los campos de las tramas ADS-B/Mode-S.
+
+* adsb_rx_completo.py: 
+  Receptor GNU Radio. Solo necesario si se usa el modo --zmq.
+
+* gnuradiotestadsbv1utnfrp.grc: 
+  Diagrama visual de GNU Radio. Solo abrirlo si se desean cambios en RF.
+
+* test_decoder.py:
+  Script de pruebas unitarias para verificar la lógica sin antena.
+
+* CHANGELOG.md:
+  Registro detallado de todos los cambios entre versiones.
+
+======================================================================
+ Solución de Problemas (Troubleshooting)
+======================================================================
+
+Problema: "ModuleNotFoundError: No module named 'pmt'" o "zmq"
+Solución: Estás usando la consola "CMD" de Windows normal en lugar del 
+          "Radioconda Prompt". Siempre abre Radioconda Prompt.
+
+Problema: "No se pudo conectar a dump1090 en 127.0.0.1:30002"
+Solución: dump1090 no está corriendo o no se inició con el flag --net.
+          Ejecuta: dump1090 --net --gain 49.6 --aggressive
+
+Problema: El decodificador dice "Esperando..." pero no salen datos.
+Solución: Si usas modo dump1090, verifica que dump1090 muestre aviones 
+          en su propia interfaz. Si no ve nada, es un problema físico 
+          de la antena (falta de línea de vista al horizonte).
+          Si usas modo GNU Radio (--zmq), prueba cambiar a modo dump1090.
+
+Problema: "RuntimeError: No RTL-SDR devices found!"
+Solución: Windows no detecta el USB o el driver WinUSB se desconfiguró. 
+          Vuelve a correr Zadig.
