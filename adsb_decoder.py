@@ -340,16 +340,20 @@ class ADSBDecoder:
         ac.msg_count += 1
         return ac
 
-    def _cleanup_expired(self, max_age: float = 300.0):
-        """Elimina aeronaves sin mensajes recientes para prevenir fuga de memoria."""
+    def _cleanup_expired(self, max_memory: int = 500):
+        """Mantiene el historial persistente pero limita la cantidad máxima para evitar fuga de memoria."""
         now = time()
-        if now - self._last_cleanup < 30.0:
+        if now - self._last_cleanup < 60.0:
             return
         self._last_cleanup = now
-        expired = [icao for icao, ac in self.aircraft.items()
-                   if ac.age() > max_age]
-        for icao in expired:
-            del self.aircraft[icao]
+        
+        # Eliminar las aeronaves más antiguas SOLO si superamos el límite histórico
+        if len(self.aircraft) > max_memory:
+            # Ordenar por último avistamiento (las más viejas primero)
+            sorted_acs = sorted(self.aircraft.items(), key=lambda x: x[1].last_seen)
+            to_delete = len(self.aircraft) - max_memory
+            for i in range(to_delete):
+                del self.aircraft[sorted_acs[i][0]]
 
     def process(self, hex_msg: str) -> Optional[Dict[str, Any]]:
         """
@@ -1021,36 +1025,52 @@ def format_output(data: dict, show_deep: bool = True) -> str:
 
 
 def format_aircraft_summary(aircraft: Dict[str, AircraftState]) -> str:
-    """Genera un resumen de todas las aeronaves rastreadas."""
+    """Genera un resumen de todas las aeronaves rastreadas usando el Sistema Métrico."""
     # Filtro anti-fantasmas: requerir al menos 2 mensajes para considerar real a la aeronave
     real_aircraft = {icao: ac for icao, ac in aircraft.items() if ac.msg_count >= 2}
 
     if not real_aircraft:
         return f"{C.DIM}  Buscando aeronaves válidas (filtrando ruido)...{C.RESET}"
 
+    # Ordenar por el PRIMER mensaje recibido (first_seen), cronológicamente ascendente
+    sorted_acs = sorted(real_aircraft.items(), key=lambda x: x[1].first_seen)
+
     lines = [
-        f"{C.CYAN}{'=' * 70}{C.RESET}",
-        f"{C.BOLD}{C.CYAN}  AERONAVES RASTREADAS: {len(real_aircraft)} (Filtradas: {len(aircraft) - len(real_aircraft)}){C.RESET}",
-        f"{C.CYAN}{'=' * 70}{C.RESET}",
-        f"  {C.DIM}{'ICAO':>8s}  {'Vuelo':>10s}  {'Alt(ft)':>8s}  "
-        f"{'Vel(kt)':>8s}  {'Rumbo':>6s}  {'VRate':>7s}  "
-        f"{'Posición':>25s}  {'Antig':>5s}  {'Msgs':>5s}{C.RESET}",
+        f"{C.CYAN}{'=' * 95}{C.RESET}",
+        f"{C.BOLD}{C.CYAN}  AERONAVES RASTREADAS HISTÓRICAMENTE: {len(real_aircraft)} (Filtradas por ruido: {len(aircraft) - len(real_aircraft)}){C.RESET}",
+        f"{C.CYAN}{'=' * 95}{C.RESET}",
+        f"  {C.DIM}{'ESTADO':<10s}  {'ICAO':>6s}  {'Vuelo':>8s}  {'Alt(m)':>7s}  "
+        f"{'Vel(km/h)':>9s}  {'Rumbo':>5s}  {'VRate':>6s}  "
+        f"{'Posición':>24s}  {'Visto a las':>11s}{C.RESET}",
     ]
 
-    for icao, ac in sorted(real_aircraft.items(), key=lambda x: x[1].last_seen,
-                            reverse=True):
+    for icao, ac in sorted_acs:
+        # Lógica de estados (Activa, Inactiva, Perdida)
+        age_sec = ac.age()
+        if age_sec < 60:
+            estado = f"{C.GREEN}Activa    {C.RESET}"
+            row_color = C.WHITE
+        elif age_sec < 300:
+            estado = f"{C.YELLOW}Inactiva  {C.RESET}"
+            row_color = C.DIM
+        else:
+            estado = f"{C.RED}Perdida   {C.RESET}"
+            row_color = C.DIM
+
         cs = ac.callsign or '---'
-        alt = f'{ac.altitude_baro}' if ac.altitude_baro is not None else '---'
-        spd = f'{ac.speed:.0f}' if ac.speed is not None else '---'
+        # Conversiones SIMELA (Argentina)
+        alt = f'{int(ac.altitude_baro * 0.3048)}' if ac.altitude_baro is not None else '---'
+        spd = f'{int(ac.speed * 1.852)}' if ac.speed is not None else '---'
         hdg = f'{ac.heading:.0f}' if ac.heading is not None else '---'
-        vr = f'{ac.vertical_rate}' if ac.vertical_rate is not None else '---'
+        vr = f'{int(ac.vertical_rate * 0.3048)}' if ac.vertical_rate is not None else '---'
+        
         pos = format_position(ac.latitude, ac.longitude) if ac.latitude else '---'
-        age = f'{ac.age():.0f}s'
+        first_seen_str = strftime('%H:%M:%S', localtime(ac.first_seen))
 
         lines.append(
-            f"  {C.WHITE}{icao:>8s}  {cs:>10s}  {alt:>8s}  "
-            f"{spd:>8s}  {hdg:>6s}  {vr:>7s}  "
-            f"{pos:>25s}  {age:>5s}  {ac.msg_count:>5d}{C.RESET}"
+            f"  {estado}  {row_color}{icao:>6s}  {cs:>8s}  {alt:>7s}  "
+            f"{spd:>9s}  {hdg:>5s}  {vr:>6s}  "
+            f"{pos:>24s}  {first_seen_str:>11s}{C.RESET}"
         )
 
     return '\n'.join(lines)
@@ -1312,7 +1332,7 @@ def run_zmq_mode():
                     df = result.get('df')
                     desc = DF_DESCRIPTION.get(df, f"DF{df}")
                     tc_str = f" | TC{result.get('tc')}" if result.get('tc') is not None else ""
-                    alt_str = f" | Alt: {ac.altitude_baro}ft" if ac.altitude_baro else ""
+                    alt_str = f" | Alt: {int(ac.altitude_baro * 0.3048)}m" if ac.altitude_baro else ""
                     log_line = f"  {C.DIM}[{result['timestamp_str']}]{C.RESET} {C.YELLOW}{icao}{C.RESET} ({vuelo}) | {C.CYAN}{desc}{tc_str}{C.RESET}{alt_str}"
                     
                     event_log.append(log_line)
