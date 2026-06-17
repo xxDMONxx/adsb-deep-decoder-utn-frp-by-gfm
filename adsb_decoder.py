@@ -104,29 +104,29 @@ AIRCRAFT_CATEGORY = {
 }
 
 DF_DESCRIPTION = {
-    0:  'Short Air-Air Surveillance (ACAS)',
-    4:  'Surveillance Altitude Reply',
-    5:  'Surveillance Identity Reply',
-    11: 'All-Call Reply',
-    16: 'Long Air-Air Surveillance (ACAS)',
+    0:  'Vigilancia Aire-Aire Corta (ACAS)',
+    4:  'Respuesta de Altitud de Vigilancia',
+    5:  'Respuesta de Identidad de Vigilancia',
+    11: 'Respuesta All-Call',
+    16: 'Vigilancia Aire-Aire Larga (ACAS)',
     17: 'ADS-B Extended Squitter',
     18: 'Extended Squitter (TIS-B / ADS-R)',
     19: 'Military Extended Squitter',
-    20: 'Comm-B Altitude Reply',
-    21: 'Comm-B Identity Reply',
-    24: 'Comm-D Extended Length Message',
+    20: 'Respuesta de Altitud Comm-B',
+    21: 'Respuesta de Identidad Comm-B',
+    24: 'Mensaje de Longitud Extendida Comm-D',
 }
 
 TC_DESCRIPTION = {
-    (1, 4):   'Aircraft Identification',
-    (5, 8):   'Surface Position',
-    (9, 18):  'Airborne Position (Baro Alt)',
-    (19, 19): 'Airborne Velocity',
-    (20, 22): 'Airborne Position (GNSS Height)',
-    (23, 27): 'Reserved',
-    (28, 28): 'Aircraft Status',
-    (29, 29): 'Target State and Status',
-    (31, 31): 'Aircraft Operational Status',
+    (1, 4):   'Identificación de Aeronave',
+    (5, 8):   'Posición en Superficie',
+    (9, 18):  'Posición en Vuelo (Alt Baro)',
+    (19, 19): 'Velocidad Aérea',
+    (20, 22): 'Posición en Vuelo (Alt GNSS)',
+    (23, 27): 'Reservado',
+    (28, 28): 'Estatus de Aeronave',
+    (29, 29): 'Estado y Estatus del Blanco',
+    (31, 31): 'Estado Operacional de Aeronave',
 }
 
 EMERGENCY_STATES = {
@@ -1032,9 +1032,9 @@ def format_aircraft_summary(aircraft: Dict[str, AircraftState]) -> str:
         f"{C.CYAN}{'=' * 70}{C.RESET}",
         f"{C.BOLD}{C.CYAN}  AERONAVES RASTREADAS: {len(real_aircraft)} (Filtradas: {len(aircraft) - len(real_aircraft)}){C.RESET}",
         f"{C.CYAN}{'=' * 70}{C.RESET}",
-        f"  {C.DIM}{'ICAO':>8s}  {'Callsign':>10s}  {'Alt(ft)':>8s}  "
-        f"{'Spd(kt)':>8s}  {'Hdg':>6s}  {'VRate':>7s}  "
-        f"{'Position':>25s}  {'Age':>5s}  {'Msgs':>5s}{C.RESET}",
+        f"  {C.DIM}{'ICAO':>8s}  {'Vuelo':>10s}  {'Alt(ft)':>8s}  "
+        f"{'Vel(kt)':>8s}  {'Rumbo':>6s}  {'VRate':>7s}  "
+        f"{'Posición':>25s}  {'Antig':>5s}  {'Msgs':>5s}{C.RESET}",
     ]
 
     for icao, ac in sorted(real_aircraft.items(), key=lambda x: x[1].last_seen,
@@ -1056,32 +1056,39 @@ def format_aircraft_summary(aircraft: Dict[str, AircraftState]) -> str:
     return '\n'.join(lines)
 
 
-# =============================================================================
-# Loop principal
-# =============================================================================
-
-def print_banner(source_mode: str, endpoint: str):
-    """Imprime el banner de inicio del sistema."""
-    print(f"{C.BOLD}{C.CYAN}")
-    print("+" + "=" * 68 + "+")
+def render_dashboard(decoder, source_mode: str, endpoint: str, event_log: list):
+    """Limpia la pantalla y dibuja el ATC Dashboard estático."""
+    # Limpiar pantalla y mover cursor arriba a la izquierda
+    sys.stdout.write("\033[2J\033[H")
+    
+    # Banner
+    print(f"{C.BOLD}{C.CYAN}+{'=' * 68}+")
     print("|                                                                    |")
-    print("|         AERO-LITORAL 26 -- ADS-B / Mode-S Deep Decoder            |")
+    print("|         AERO-LITORAL 26 -- ADS-B / Mode-S ATC Dashboard            |")
     print("|              Testbench Terrestre  -  CubeSat 1U                    |")
-    print("|                     UTN-FRP v2.1                                   |")
+    print("|                     UTN-FRP v2.2                                   |")
     print("|                                                                    |")
     print("+" + "=" * 68 + "+")
-    print(f"{C.RESET}")
-    print(f"  {C.WHITE}pyModeS version: {pyModeS.__version__}{C.RESET}")
-    print(f"  {C.WHITE}Capacidades:{C.RESET}")
-    print(f"  {C.GREEN}+{C.RESET} Downlink Formats: DF0, DF4, DF5, DF11, DF16, DF17, DF18, DF20, DF21")
-    print(f"  {C.GREEN}+{C.RESET} Type Codes:       TC1-4, TC5-8, TC9-18, TC19, TC20-22, TC28, TC29, TC31")
-    print(f"  {C.GREEN}+{C.RESET} CRC Validation  - CPR Global Pair  - Deep Frame Analysis")
-    print(f"  {C.GREEN}+{C.RESET} Aircraft Tracking - Statistics     - Memory Management")
+    print(f"{C.RESET}  {C.WHITE}pyModeS version: {pyModeS.__version__}{C.RESET}")
+    print(f"{C.YELLOW}  [*]{C.RESET} Entrada: {C.BOLD}{source_mode}{C.RESET} | Endpoint: {endpoint}")
     print()
-    print(f"{C.YELLOW}  [*]{C.RESET} Modo de entrada: {C.BOLD}{source_mode}{C.RESET}")
-    print(f"{C.YELLOW}  [*]{C.RESET} Endpoint: {endpoint}")
-    print(f"{C.YELLOW}  [*]{C.RESET} Esperando tramas ADS-B/Mode-S...")
+
+    # Estadísticas y Aeronaves
+    print(decoder.get_stats_summary())
+    print(format_aircraft_summary(decoder.aircraft))
     print()
+    
+    # Log de Eventos Condensado
+    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
+    print(f"{C.BOLD}{C.CYAN}  ÚLTIMOS EVENTOS DE RADAR{C.RESET}")
+    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
+    if not event_log:
+        print(f"  {C.DIM}Esperando interceptar aeronaves...{C.RESET}")
+    else:
+        for event in event_log:
+            print(event)
+    print(f"{C.CYAN}{'=' * 70}{C.RESET}")
+    sys.stdout.flush()
 
 
 def run_dump1090_mode(host: str, port: int):
@@ -1097,7 +1104,6 @@ def run_dump1090_mode(host: str, port: int):
     import socket
 
     endpoint = f"tcp://{host}:{port}"
-    print_banner("dump1090 (TCP Raw AVR)", endpoint)
 
     decoder = ADSBDecoder()
     last_stats_time = time()
@@ -1224,7 +1230,6 @@ def run_zmq_mode():
         return
 
     endpoint = "tcp://127.0.0.1:5555"
-    print_banner("GNU Radio (ZMQ PUB)", endpoint)
 
     # --- Configurar ZMQ ---
     ctx = zmq.Context()
@@ -1244,14 +1249,22 @@ def run_zmq_mode():
         return
 
     decoder = ADSBDecoder()
-    last_stats_time = time()
-    STATS_INTERVAL = 30.0
+    last_ui_update = 0.0
+    UI_UPDATE_INTERVAL = 0.5
+    event_log = []
+    MAX_LOG_LINES = 12
 
     try:
         while True:
+            # Renderizar UI a intervalo regular para actualizar relojes
+            now = time()
+            if now - last_ui_update >= UI_UPDATE_INTERVAL:
+                render_dashboard(decoder, "GNU Radio (ZMQ PUB)", endpoint, event_log)
+                last_ui_update = now
+
             try:
-                # --- Recepción y Deserialización PMT ---
-                raw_data = subscriber.recv()
+                # Recepción NO BLOQUEANTE para no frenar la UI
+                raw_data = subscriber.recv(flags=zmq.NOBLOCK)
                 pdu = pmt.deserialize_str(raw_data)
 
                 # Extraer payload del PDU (metadata . payload)
@@ -1279,27 +1292,13 @@ def run_zmq_mode():
                     blob_data = pmt.blob_data(data_vector)
                     hex_str = bytes(blob_data).hex().upper()
                 else:
-                    pmt_type = type(data_vector).__name__
-                    print(f"{C.YELLOW}  [!] Payload PMT desconocido: "
-                          f"{pmt_type}{C.RESET}")
                     continue
 
             except zmq.Again:
-                now = time()
-                if now - last_stats_time >= STATS_INTERVAL:
-                    if decoder.stats['total_received'] > 0:
-                        print(decoder.get_stats_summary())
-                        print(format_aircraft_summary(decoder.aircraft))
-                        print()
-                    last_stats_time = now
+                time.sleep(0.05)
                 continue
 
-            except zmq.ZMQError as e:
-                print(f"{C.RED}  [!] Error ZMQ recv: {e}{C.RESET}")
-                continue
-
-            except Exception as e:
-                print(f"{C.RED}  [!] Error parseando trama: {e}{C.RESET}")
+            except Exception:
                 continue
 
             result = decoder.process(hex_str)
@@ -1307,15 +1306,22 @@ def run_zmq_mode():
             if result is not None:
                 icao = result.get('icao')
                 if icao and icao in decoder.aircraft and decoder.aircraft[icao].msg_count >= 2:
-                    print(format_output(result, show_deep=True))
-                    print()
-
-                now = time()
-                if now - last_stats_time >= STATS_INTERVAL:
-                    print(decoder.get_stats_summary())
-                    print(format_aircraft_summary(decoder.aircraft))
-                    print()
-                    last_stats_time = now
+                    # Formatear linea para el event log condensado
+                    ac = decoder.aircraft[icao]
+                    vuelo = ac.callsign or "---"
+                    df = result.get('df')
+                    desc = DF_DESCRIPTION.get(df, f"DF{df}")
+                    tc_str = f" | TC{result.get('tc')}" if result.get('tc') is not None else ""
+                    alt_str = f" | Alt: {ac.altitude_baro}ft" if ac.altitude_baro else ""
+                    log_line = f"  {C.DIM}[{result['timestamp_str']}]{C.RESET} {C.YELLOW}{icao}{C.RESET} ({vuelo}) | {C.CYAN}{desc}{tc_str}{C.RESET}{alt_str}"
+                    
+                    event_log.append(log_line)
+                    if len(event_log) > MAX_LOG_LINES:
+                        event_log.pop(0)
+                        
+                    # Forzar refresco de UI inmediato si entra mensaje válido
+                    render_dashboard(decoder, "GNU Radio (ZMQ PUB)", endpoint, event_log)
+                    last_ui_update = time()
 
     except KeyboardInterrupt:
         print(f"\n{C.YELLOW}  [*] Interrumpido por usuario.{C.RESET}")
