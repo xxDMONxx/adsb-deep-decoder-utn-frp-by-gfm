@@ -59,16 +59,18 @@ class TUIDashboard:
 
         # --- HEADER ---
         now_str = strftime('%H:%M:%S', localtime())
-        status_txt = "● PAUSADO " if self.paused else "● ONLINE  "
+        status_txt = "● PAUSADO" if self.paused else "● ONLINE"
         title = f"AERO-LITORAL 26 - UTN-FRP | Dev: Moreira, G.F. | v{self.version}"
         
-        rem = w - len(title) - len(status_txt) - len(now_str)
+        # Calculamos padding exacto sin exceder w
+        rem = w - len(title) - len(status_txt) - len(now_str) - 2 # 2 espacios para separar
         if rem > 0:
             pad1 = rem // 2
             pad2 = rem - pad1
-            header_text = f" {title}{' ' * (pad1-1)}{status_txt}{' ' * pad2}{now_str} "
+            header_text = f" {title}{' ' * pad1}{status_txt}{' ' * pad2}{now_str} "
         else:
             header_text = f" {title} {status_txt} {now_str} "[:w]
+            
         lines.append(f"┌{'─' * w}┐")
         lines.append(f"│{header_text:<{w}}│")
         lines.append(f"├{'─' * w}┤")
@@ -91,7 +93,7 @@ class TUIDashboard:
                       f"Activas: {act_count} │ ZMQ: OK ")
         lines.append(f"│{stats_text:<{w}}│")
         lines.append(f"└{'─' * w}┘")
-        lines.append("")
+        lines.append(" " * (w + 2))
 
         # --- PROGRESS BARS (DF / TC) ---
         df_counts = sorted(stats['df_counts'].items(), key=lambda x: x[0])
@@ -107,17 +109,17 @@ class TUIDashboard:
             df_l = df_lines[i] if i < len(df_lines) else ""
             tc_l = tc_lines[i] if i < len(tc_lines) else ""
             lines.append(f"│ {df_l:<30} │   │ {tc_l:<34} │")
-        lines.append(f"└{'─' * 32}┘   └{'─' * 36}┘")
-        lines.append("")
+        lines.append(f"└{'─' * 32}┘   └{'─' * 36}┘".ljust(w + 2))
+        lines.append(" " * (w + 2))
 
         # --- AERONAVES ---
         table_title = f" AERONAVES (Total: {len(decoder.aircraft)}) "
         pad_l = (w - len(table_title)) // 2
         pad_r = w - len(table_title) - pad_l
         lines.append(f"┌{'─' * pad_l}{table_title}{'─' * pad_r}┐")
-        header_cols = "ESTADO │ ICAO   │ VUELO │ ALT(m)│ SPD │ HDG │ V/S │ DIST │ RSSI │ LAT         │ LON         │ ÚLTIMO"
+        header_cols = " ESTADO │ ICAO   │ VUELO │ ALT(m)│ SPD │ HDG │ V/S │ DIST │ RSSI │ LAT         │ LON         │ ÚLTIMO"
         lines.append(f"│{header_cols:<{w}}│")
-        lines.append(f"├{'─' * 7}┼{'─' * 8}┼{'─' * 7}┼{'─' * 7}┼{'─' * 5}┼{'─' * 5}┼{'─' * 5}┼{'─' * 6}┼{'─' * 6}┼{'─' * 13}┼{'─' * 13}┼{'─' * 8}┤")
+        lines.append(f"├{'─' * w}┤")
 
         real_aircraft = [ac for ac in decoder.aircraft.values() if ac.msg_count >= 2]
         sorted_acs = sorted(real_aircraft, key=lambda x: x.last_seen, reverse=True)
@@ -171,7 +173,7 @@ class TUIDashboard:
             lines.append(f"│{' ' * w}│")
             
         lines.append(f"└{'─' * w}┘")
-        lines.append("")
+        lines.append(" " * (w + 2))
 
         # --- EVENTOS ---
         ev_title = " EVENTOS "
@@ -195,7 +197,7 @@ class TUIDashboard:
                 lines.append(f"│{' ' * w}│")
                 
         lines.append(f"└{'─' * w}┘")
-        lines.append("")
+        lines.append(" " * (w + 2))
 
         # --- FOOTER ---
         footer_txt = f" Q Salir     R Reset     S Exportar CSV     P Pausar     ↑↓ Pag: {self.page+1}/{max_pages} "
