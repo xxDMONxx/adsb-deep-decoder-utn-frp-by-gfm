@@ -53,8 +53,11 @@ class TUIDashboard:
         self._update_terminal_size()
         lines = []
 
+        # Usar term_width - 1 para evitar que Windows CMD haga auto-wrap de las líneas
+        safe_width = self.term_width - 1
+        w = safe_width - 2  # Espacio interno restando los bordes izquierdo y derecho
+
         # --- HEADER ---
-        w = self.term_width - 2
         now_str = strftime('%H:%M:%S', localtime())
         status_txt = "● PAUSADO " if self.paused else "● ONLINE  "
         header_text = f" ADS-B RECEIVER v{self.version}                              {status_txt}                           {now_str} "
@@ -108,15 +111,13 @@ class TUIDashboard:
         lines.append(f"│{header_cols:<{w}}│")
         lines.append(f"├{'─' * 7}┼{'─' * 8}┼{'─' * 7}┼{'─' * 7}┼{'─' * 5}┼{'─' * 5}┼{'─' * 5}┼{'─' * 6}┼{'─' * 6}┼{'─' * 13}┼{'─' * 13}┼{'─' * 8}┤")
 
-        # No limit on aircraft rendering if they're real
         real_aircraft = [ac for ac in decoder.aircraft.values() if ac.msg_count >= 2]
         sorted_acs = sorted(real_aircraft, key=lambda x: x.last_seen, reverse=True)
         
-        # Calculate max rows dynamically
+        # Calculate max rows dynamically, leaving 1 blank line at bottom
         used_lines = 4 + 3 + (4 + max_bar_lines) + 2 + 3 + 8 + 3
-        self.max_rows = max(self.term_height - used_lines - 4, 3) 
+        self.max_rows = max(self.term_height - used_lines - 2, 3) 
 
-        # Paginación simplificada
         max_pages = math.ceil(len(sorted_acs) / self.max_rows) if len(sorted_acs) > 0 else 1
         if self.page >= max_pages:
             self.page = max_pages - 1
@@ -126,13 +127,13 @@ class TUIDashboard:
         for ac in display_acs:
             age_sec = ac.age()
             if age_sec < 30:
-                est_raw = "🟢 LIVE"
+                est_raw = "LIVE"
                 color = C.GREEN
             elif age_sec < 120:
-                est_raw = "🟡 LOST"
+                est_raw = "LOST"
                 color = C.YELLOW
             else:
-                est_raw = "🔴 DEAD"
+                est_raw = "DEAD"
                 color = C.DIM + C.RED
 
             icao = ac.icao
@@ -148,17 +149,11 @@ class TUIDashboard:
             dist = "---"
             rssi = "---"
 
-            raw_row = f"{est_raw:<7}│ {icao:<6} │ {cs:<5} │ {alt:>5} │ {spd:>3} │ {hdg:>3} │ {vr:>3} │ {dist:>4} │ {rssi:>4} │ {lat:<11} │ {lon:<11} │ {age_s:<6}"
-            
-            # The length of '🟢 LIVE' is visually 7, but len("🟢 LIVE") in Python might be 6 or 7 depending on encoding. 
-            # Emojis usually count as 1 char but occupy 2 spaces in monospaced fonts.
-            # We will use ansi padding
-            
-            painted_row = f"{color}{est_raw}{C.RESET}│ {icao:<6} │ {cs:<5} │ {alt:>5} │ {spd:>3} │ {hdg:>3} │ {vr:>3} │ {dist:>4} │ {rssi:>4} │ {lat:<11} │ {lon:<11} │ {age_s:<6}"
+            # Reemplacé los emojis por texto puro para evitar el desajuste de padding en Windows CMD
+            painted_row = f"{color} {est_raw:<5} {C.RESET}│ {icao:<6} │ {cs:<5} │ {alt:>5} │ {spd:>3} │ {hdg:>3} │ {vr:>3} │ {dist:>4} │ {rssi:>4} │ {lat:<11} │ {lon:<11} │ {age_s:<6}"
             
             clean_len = len(ansi_escape.sub('', painted_row))
-            # Emojis take 2 spaces, let's assume length is clean_len + 1 for padding
-            pad_len = w - clean_len - 1
+            pad_len = w - clean_len
             if pad_len > 0:
                 painted_row += " " * pad_len
             
@@ -176,7 +171,6 @@ class TUIDashboard:
         pad_r = w - len(ev_title) - pad_l
         lines.append(f"┌{'─' * pad_l}{ev_title}{'─' * pad_r}┐")
         
-        # Mostrar ultimos 6
         for i in range(6):
             if i < len(event_log):
                 raw_ev = event_log[-(i+1)]
@@ -185,6 +179,7 @@ class TUIDashboard:
                 pad_len = w - len(clean_ev) - 2 # left and right space
                 if pad_len < 0:
                     clean_ev = clean_ev[:w-5] + "..."
+                    raw_ev = clean_ev
                     pad_len = 0
                 
                 lines.append(f"│ {raw_ev}{' ' * pad_len} │")
@@ -198,10 +193,13 @@ class TUIDashboard:
         footer_txt = f" Q Salir     R Reset     S Exportar CSV     P Pausar     ↑↓ Pag: {self.page+1}/{max_pages} "
         lines.append(f" {footer_txt} ")
 
-        # Imprimir de una: ocultar cursor, mover a origen, imprimir, mostrar cursor (al final, o dejarlo oculto)
-        # \033[?25l = oculta cursor
-        # \033[?25h = muestra cursor
-        sys.stdout.write("\033[?25l\033[H" + "\n".join(lines) + "\n\033[?25h")
+        # Truncar cantidad total de lineas a term_height - 1 para evitar cascada
+        max_lines_allowed = self.term_height - 1
+        if len(lines) > max_lines_allowed:
+            lines = lines[:max_lines_allowed]
+
+        # Imprimir de una sin \n al final!
+        sys.stdout.write("\033[?25l\033[H" + "\n".join(lines) + "\033[?25h")
         sys.stdout.flush()
 
     def _build_bars(self, counts, prefix, width):
