@@ -21,6 +21,12 @@ echo Iniciando el Decodificador Profundo (Python)...
 start "Decodificador ADS-B (pyModeS)" cmd /k "C:\ProgramData\radioconda\Scripts\activate.bat && python adsb_decoder.py --zmq"
 
 echo.
+echo Iniciando Servidor Web (LITORAL-RADAR-FRP)...
+start "LITORAL-RADAR Web Server" /MIN cmd /c "C:\ProgramData\radioconda\Scripts\activate.bat && python -m http.server 8080 --directory web"
+timeout /t 2 /nobreak > NUL
+start http://localhost:8080
+
+echo.
 echo ========================================================
 echo   Todo el sistema esta corriendo.
 echo   Podes minimizar esta ventana.

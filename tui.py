@@ -4,6 +4,7 @@ import math
 from time import time, strftime, localtime
 from typing import Dict, Any, List
 import re
+import json
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
@@ -211,6 +212,46 @@ class TUIDashboard:
         # Imprimir de una sin \n al final!
         sys.stdout.write("\033[?25l\033[H" + "\n".join(lines) + "\033[?25h")
         sys.stdout.flush()
+
+        # EXPORTACIÓN SILENCIOSA PARA WEB DASHBOARD
+        self._export_json(decoder)
+
+    def _export_json(self, decoder):
+        """Exporta el estado actual a web/data.json para el LITORAL-RADAR-FRP."""
+        data = {
+            "timestamp": time(),
+            "stats": {
+                "total_received": decoder.stats['total_received'],
+                "crc_ok": decoder.stats['crc_ok'],
+                "crc_fail": decoder.stats['crc_fail'],
+                "decode_error": decoder.stats['decode_error']
+            },
+            "aircraft": []
+        }
+        
+        # Filtrar aeronaves reales
+        for icao, ac in decoder.aircraft.items():
+            if ac.msg_count >= 2:
+                data["aircraft"].append({
+                    "icao": icao,
+                    "callsign": ac.callsign,
+                    "altitude": ac.altitude_baro,
+                    "speed": ac.speed,
+                    "heading": ac.heading,
+                    "vertical_rate": ac.vertical_rate,
+                    "latitude": ac.latitude,
+                    "longitude": ac.longitude,
+                    "age": ac.age(),
+                    "first_seen": ac.first_seen,
+                    "last_seen": ac.last_seen
+                })
+        
+        try:
+            os.makedirs("web", exist_ok=True)
+            with open("web/data.json", "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
 
     def _build_bars(self, counts, prefix, width):
         if not counts:

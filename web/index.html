@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LITORAL-RADAR-FRP | ADS-B Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Sidebar -->
+        <aside id="sidebar">
+            <header>
+                <div class="logo">
+                    <div class="radar-icon"></div>
+                    <h1>LITORAL-RADAR-FRP</h1>
+                </div>
+                <p class="subtitle">UTN-FRP | Testbench ADS-B</p>
+                
+                <div class="stats-panel">
+                    <div class="stat-box">
+                        <span class="stat-value" id="stat-active">0</span>
+                        <span class="stat-label">Aeronaves</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value" id="stat-msg">0</span>
+                        <span class="stat-label">Msg Totales</span>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button id="btn-export" class="btn primary">📥 Exportar CSV</button>
+                </div>
+            </header>
+
+            <div class="table-container">
+                <table id="aircraft-table">
+                    <thead>
+                        <tr>
+                            <th>Vuelo</th>
+                            <th>ICAO</th>
+                            <th>Alt (m)</th>
+                            <th>Vel (km/h)</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="aircraft-list">
+                        <!-- Llenado dinámicamente -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <footer>
+                <p>Status: <span id="conn-status" class="status-indicator online">● LIVE</span></p>
+                <p class="dev-credits">Dev: Moreira, G.F. | v3.2 Web</p>
+            </footer>
+        </aside>
+
+        <!-- Mapa -->
+        <main id="map-container">
+            <div id="map"></div>
+            <!-- Crosshair para el centro del radar -->
+            <div id="radar-center"></div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
