@@ -117,6 +117,11 @@ h1 {
     text-transform: uppercase;
 }
 
+.actions {
+    display: flex;
+    gap: 8px;
+}
+
 .btn {
     width: 100%;
     padding: 10px;
@@ -135,6 +140,16 @@ h1 {
 
 .btn.primary:hover {
     background-color: var(--accent-hover);
+}
+
+.btn.secondary {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid var(--border-color);
+}
+
+.btn.secondary:hover {
+    background-color: rgba(255, 255, 255, 0.2);
 }
 
 /* TABLE */

@@ -177,6 +177,47 @@ document.getElementById('btn-export').addEventListener('click', () => {
     document.body.removeChild(link);
 });
 
+// Lógica de Mi Ubicación (Geolocalización)
+let userLocationMarker = null;
+
+document.getElementById('btn-geolocate').addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        alert("Tu navegador no soporta geolocalización.");
+        return;
+    }
+    
+    document.getElementById('btn-geolocate').textContent = "📍 Ubicando...";
+    
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            
+            map.flyTo([lat, lon], 10);
+            
+            if (userLocationMarker) {
+                userLocationMarker.setLatLng([lat, lon]);
+            } else {
+                userLocationMarker = L.circleMarker([lat, lon], {
+                    radius: 6,
+                    fillColor: "#3b82f6",
+                    color: "#ffffff",
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 1
+                }).addTo(map).bindPopup("<b>Mi Ubicación</b>");
+            }
+            document.getElementById('btn-geolocate').textContent = "📍 Mi Ubicación";
+        },
+        (error) => {
+            console.error("Error obteniendo ubicación:", error);
+            alert("No se pudo obtener la ubicación. Revisá los permisos del navegador.");
+            document.getElementById('btn-geolocate').textContent = "📍 Mi Ubicación";
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+    );
+});
+
 // Iniciar Polling a 1 FPS
 setInterval(updateRadarData, 1000);
 updateRadarData();
