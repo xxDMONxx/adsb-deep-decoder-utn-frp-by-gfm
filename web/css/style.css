@@ -198,6 +198,26 @@ aside footer {
     align-items: center;
 }
 
+.dev-credits {
+    text-align: right;
+}
+
+.social-links {
+    margin-top: 4px;
+}
+
+.social-links a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.social-links a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
 .status-indicator.online { color: var(--live-green); }
 .status-indicator.offline { color: var(--dead-red); }
 
