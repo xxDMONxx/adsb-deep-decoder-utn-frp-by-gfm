@@ -1159,6 +1159,28 @@ def run_dump1090_mode(host: str, port: int):
           f"{len(decoder.aircraft)}{C.RESET}")
     print(f"{C.GREEN}  [*] Conexión cerrada limpiamente.{C.RESET}")
 
+import threading
+import json
+import socket
+
+def udp_cubesat_listener(decoder):
+    """Hilo secundario que escucha paquetes UDP del CubeSat/Simulador."""
+    UDP_IP = "127.0.0.1"
+    UDP_PORT = 5556
+    
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((UDP_IP, UDP_PORT))
+    sock.settimeout(1.0)
+    
+    while True:
+        try:
+            data, _ = sock.recvfrom(4096)
+            payload = json.loads(data.decode('utf-8'))
+            decoder.process_cubesat_telemetry(payload)
+        except socket.timeout:
+            pass
+        except Exception:
+            pass
 
 def run_zmq_mode():
     """
