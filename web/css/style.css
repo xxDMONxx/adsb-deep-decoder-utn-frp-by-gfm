@@ -117,6 +117,43 @@ h1 {
     text-transform: uppercase;
 }
 
+.cubesat-health {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 20px;
+}
+
+.cubesat-health h3 {
+    font-size: 0.85rem;
+    color: var(--live-green);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cs-badge {
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+}
+.cs-badge.online { background: rgba(16, 185, 129, 0.2); color: var(--live-green); }
+.cs-badge.offline { background: rgba(239, 68, 68, 0.2); color: var(--dead-red); }
+
+.health-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.health-item b {
+    color: var(--text-main);
+}
+
 .actions {
     display: flex;
     gap: 8px;

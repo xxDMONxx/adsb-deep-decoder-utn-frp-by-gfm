@@ -30,8 +30,11 @@ let aircraftMarkers = {};
 let aircraftDataCache = [];
 
 // Ícono de avión SVG dinámico
-function createPlaneIcon(heading, isLost) {
-    const color = isLost ? '#f59e0b' : '#3b82f6';
+function createPlaneIcon(heading, isLost, source="ground") {
+    let color = isLost ? '#f59e0b' : '#3b82f6'; // Azul = Tierra, Naranja = Perdido
+    if (source === "cubesat") {
+        color = '#10b981'; // Verde = CubeSat
+    }
     const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" style="transform: rotate(${heading || 0}deg);">
             <path d="M21,16V14L13,9V3.5A1.5,1.5 0 0,0 11.5,2A1.5,1.5 0 0,0 10,3.5V9L2,14V16L10,13.5V19L8,20.5V22L11.5,21L15,22V20.5L13,19V13.5L21,16Z" fill="${color}" stroke="#fff" stroke-width="1"/>
@@ -89,9 +92,20 @@ function processData(data) {
         if (ac.age < 30) { statusClass = "ac-live"; statusText = "LIVE"; }
         else if (ac.age < 120) { statusClass = "ac-lost"; statusText = "LOST"; }
 
+        // Si el ICAO también viene del cubesat, lo marcamos en la tabla
+        let isFromCubeSat = false;
+        if (data.cubesat_aircraft) {
+            isFromCubeSat = data.cubesat_aircraft.some(c => c.icao === ac.icao);
+        }
+        
+        let callsignHtml = `<b>${ac.callsign || '---'}</b>`;
+        if (isFromCubeSat) {
+            callsignHtml += ` <span style="font-size:0.6rem; background:var(--live-green); color:#111; padding:2px 4px; border-radius:3px;">+SAT</span>`;
+        }
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><b>${ac.callsign || '---'}</b></td>
+            <td>${callsignHtml}</td>
             <td>${ac.icao}</td>
             <td>${ac.altitude !== null ? Math.round(ac.altitude * 0.3048) : '---'}</td>
             <td>${ac.speed !== null ? Math.round(ac.speed * 1.852) : '---'}</td>
@@ -109,15 +123,16 @@ function processData(data) {
         });
         tbody.appendChild(tr);
 
-        // --- 2. Mapa ---
+        // --- 2. Mapa (Aviones de Tierra) ---
         if (ac.latitude && ac.longitude) {
             const isLost = ac.age > 30;
-            const icon = createPlaneIcon(ac.heading, isLost);
+            const icon = createPlaneIcon(ac.heading, isLost, "ground");
             
             const popupContent = `
                 <div class="popup-custom">
                     <h3>✈️ ${ac.callsign || 'Desconocido'}</h3>
                     <p><b>ICAO:</b> ${ac.icao}</p>
+                    <p><b>Origen:</b> Estación Terrena (SDR)</p>
                     <p><b>Altitud:</b> ${Math.round(ac.altitude * 0.3048)} m</p>
                     <p><b>Velocidad:</b> ${Math.round(ac.speed * 1.852)} km/h</p>
                     <p><b>Rumbo:</b> ${ac.heading ? Math.round(ac.heading) + '°' : '---'}</p>
@@ -125,12 +140,10 @@ function processData(data) {
             `;
 
             if (aircraftMarkers[ac.icao]) {
-                // Actualizar marcador existente (suavidad)
                 aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
                 aircraftMarkers[ac.icao].setIcon(icon);
                 aircraftMarkers[ac.icao].getPopup().setContent(popupContent);
             } else {
-                // Crear nuevo marcador
                 const marker = L.marker([ac.latitude, ac.longitude], { icon: icon })
                     .bindPopup(popupContent)
                     .addTo(map);
@@ -138,6 +151,58 @@ function processData(data) {
             }
         }
     });
+
+    // --- 3. Mapa (Aviones Únicos de CubeSat) ---
+    if (data.cubesat_aircraft) {
+        data.cubesat_aircraft.forEach(ac => {
+            // Si no lo tenemos dibujado ya por Tierra, lo dibujamos por Satélite
+            if (!currentIcaos.has(ac.icao)) {
+                currentIcaos.add(ac.icao);
+                
+                if (ac.latitude && ac.longitude) {
+                    const icon = createPlaneIcon(ac.heading, false, "cubesat");
+                    const popupContent = `
+                        <div class="popup-custom">
+                            <h3>🛰️ ${ac.callsign || 'Desconocido'}</h3>
+                            <p><b>ICAO:</b> ${ac.icao}</p>
+                            <p><b>Origen:</b> CubeSat TM</p>
+                            <p><b>Altitud:</b> ${Math.round(ac.altitude * 0.3048)} m</p>
+                            <p><b>Velocidad:</b> ${Math.round(ac.speed * 1.852)} km/h</p>
+                        </div>
+                    `;
+
+                    if (aircraftMarkers[ac.icao]) {
+                        aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
+                        aircraftMarkers[ac.icao].setIcon(icon);
+                        aircraftMarkers[ac.icao].getPopup().setContent(popupContent);
+                    } else {
+                        const marker = L.marker([ac.latitude, ac.longitude], { icon: icon })
+                            .bindPopup(popupContent)
+                            .addTo(map);
+                        aircraftMarkers[ac.icao] = marker;
+                    }
+                }
+            }
+        });
+    }
+
+    // Actualizar Panel de Salud del CubeSat
+    if (data.cubesat_health) {
+        const h = data.cubesat_health;
+        const statusBadge = document.getElementById("cs-status");
+        
+        if (h.status === "OFFLINE") {
+            statusBadge.className = "cs-badge offline";
+            statusBadge.textContent = "OFFLINE";
+        } else {
+            statusBadge.className = "cs-badge online";
+            statusBadge.textContent = "ONLINE";
+            document.getElementById("cs-vbat").textContent = h.vbat.toFixed(2);
+            document.getElementById("cs-temp").textContent = h.temp.toFixed(1);
+            document.getElementById("cs-pitch").textContent = h.pitch.toFixed(1);
+            document.getElementById("cs-roll").textContent = h.roll.toFixed(1);
+        }
+    }
 
     // Limpiar marcadores viejos del mapa
     Object.keys(aircraftMarkers).forEach(icao => {

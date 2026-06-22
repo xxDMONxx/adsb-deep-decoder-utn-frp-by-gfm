@@ -1191,6 +1191,11 @@ def run_zmq_mode():
         return
 
     decoder = ADSBDecoder()
+    
+    # Iniciar hilo de CubeSat UDP (Puerto 5556)
+    t_cubesat = threading.Thread(target=udp_cubesat_listener, args=(decoder,), daemon=True)
+    t_cubesat.start()
+
     tui = TUIDashboard()
     
     last_ui_update = 0.0

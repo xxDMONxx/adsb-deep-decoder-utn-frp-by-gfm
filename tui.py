@@ -226,10 +226,12 @@ class TUIDashboard:
                 "crc_fail": decoder.stats['crc_fail'],
                 "decode_error": decoder.stats['decode_error']
             },
-            "aircraft": []
+            "aircraft": [],
+            "cubesat_aircraft": [],
+            "cubesat_health": getattr(decoder, 'cubesat_health', {})
         }
         
-        # Filtrar aeronaves reales
+        # Filtrar aeronaves reales de Tierra
         for icao, ac in decoder.aircraft.items():
             if ac.msg_count >= 2:
                 data["aircraft"].append({
@@ -245,6 +247,24 @@ class TUIDashboard:
                     "first_seen": ac.first_seen,
                     "last_seen": ac.last_seen
                 })
+
+        # Filtrar aeronaves reales del CubeSat
+        if hasattr(decoder, 'cubesat_aircraft'):
+            for icao, ac in decoder.cubesat_aircraft.items():
+                if ac.msg_count >= 2:
+                    data["cubesat_aircraft"].append({
+                        "icao": icao,
+                        "callsign": ac.callsign,
+                        "altitude": ac.altitude_baro,
+                        "speed": ac.speed,
+                        "heading": ac.heading,
+                        "vertical_rate": ac.vertical_rate,
+                        "latitude": ac.latitude,
+                        "longitude": ac.longitude,
+                        "age": ac.age(),
+                        "first_seen": ac.first_seen,
+                        "last_seen": ac.last_seen
+                    })
         
         try:
             os.makedirs("web", exist_ok=True)
