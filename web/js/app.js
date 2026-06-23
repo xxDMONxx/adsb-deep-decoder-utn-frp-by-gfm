@@ -71,7 +71,40 @@ async function updateRadarData() {
 
 // ─── Process Data ───────────────────────────────────────────────────────────
 function processData(data) {
-    aircraftDataCache = data.aircraft || [];
+    const mergedAircraft = new Map();
+
+    // Add ground aircraft
+    if (data.aircraft) {
+        data.aircraft.forEach(ac => {
+            mergedAircraft.set(ac.icao, {
+                ...ac,
+                source: 'GND'
+            });
+        });
+    }
+
+    // Add/merge cubesat aircraft
+    if (data.cubesat_aircraft) {
+        data.cubesat_aircraft.forEach(ac => {
+            if (mergedAircraft.has(ac.icao)) {
+                const existing = mergedAircraft.get(ac.icao);
+                // Keep whichever has lower age (more recent/live)
+                const newer = ac.age < existing.age ? ac : existing;
+                mergedAircraft.set(ac.icao, {
+                    ...existing,
+                    ...newer,
+                    source: 'BOTH'
+                });
+            } else {
+                mergedAircraft.set(ac.icao, {
+                    ...ac,
+                    source: 'SAT'
+                });
+            }
+        });
+    }
+
+    aircraftDataCache = Array.from(mergedAircraft.values());
 
     const active = aircraftDataCache.filter(a => a.age < 60).length;
     document.getElementById('stat-active').textContent = active.toString().padStart(3, '0');
@@ -89,11 +122,6 @@ function processData(data) {
         if (ac.age < 30)       { statusClass = 'ac-live'; statusText = 'LIVE'; }
         else if (ac.age < 120) { statusClass = 'ac-lost'; statusText = 'LOST'; }
 
-        let isSat = false;
-        if (data.cubesat_aircraft) {
-            isSat = data.cubesat_aircraft.some(c => c.icao === ac.icao);
-        }
-
         const tr = document.createElement('tr');
         const cs  = ac.callsign || '---';
         const alt = ac.altitude !== null ? Math.round(ac.altitude * 0.3048) : '---';
@@ -102,6 +130,10 @@ function processData(data) {
         const lat = ac.latitude !== null ? ac.latitude.toFixed(4) : '---';
         const lon = ac.longitude !== null ? ac.longitude.toFixed(4) : '---';
 
+        let srcClass = 'src-gnd';
+        if (ac.source === 'SAT') srcClass = 'src-sat';
+        else if (ac.source === 'BOTH') srcClass = 'src-both';
+
         tr.innerHTML = `
             <td>${cs}</td>
             <td>${ac.icao}</td>
@@ -109,7 +141,7 @@ function processData(data) {
             <td>${spd}</td>
             <td>${hdg}</td>
             <td>${lat}, ${lon}</td>
-            <td><span class="${isSat ? 'src-sat' : 'src-gnd'}">${isSat ? 'SAT' : 'GND'}</span></td>
+            <td><span class="${srcClass}">${ac.source}</span></td>
             <td class="${statusClass}">${statusText}</td>
         `;
 
@@ -121,13 +153,17 @@ function processData(data) {
         });
         tbody.appendChild(tr);
 
-        if (ac.latitude && ac.longitude) {
-            const icon = createPlaneIcon(ac.heading, ac.age > 30, 'ground');
+        // Solo mostramos en el mapa aviones LIVE (age < 30s)
+        if (ac.latitude && ac.longitude && ac.age < 30) {
+            const iconType = ac.source === 'SAT' ? 'cubesat' : 'ground';
+            const icon = createPlaneIcon(ac.heading, false, iconType);
+            
+            const srcText = ac.source === 'SAT' ? 'CUBESAT' : (ac.source === 'BOTH' ? 'GND + SAT' : 'GROUND_SDR');
             const popup = `<div class="popup-custom">
                 <h3>${cs}</h3>
                 <p><b>ICAO:</b> ${ac.icao}</p>
                 <p><b>ALT:</b> ${alt} m · <b>SPD:</b> ${spd} km/h</p>
-                <p><b>HDG:</b> ${hdg} · <b>SRC:</b> GROUND_SDR</p>
+                <p><b>HDG:</b> ${hdg} · <b>SRC:</b> ${srcText}</p>
             </div>`;
 
             if (aircraftMarkers[ac.icao]) {
@@ -138,32 +174,12 @@ function processData(data) {
                 aircraftMarkers[ac.icao] = L.marker([ac.latitude, ac.longitude], { icon })
                     .bindPopup(popup).addTo(map);
             }
+        } else if (aircraftMarkers[ac.icao]) {
+            // Avión LOST/DEAD o sin posición válida → eliminamos del mapa
+            map.removeLayer(aircraftMarkers[ac.icao]);
+            delete aircraftMarkers[ac.icao];
         }
     });
-
-    // CubeSat-only aircraft
-    if (data.cubesat_aircraft) {
-        data.cubesat_aircraft.forEach(ac => {
-            if (!currentIcaos.has(ac.icao) && ac.latitude && ac.longitude) {
-                currentIcaos.add(ac.icao);
-                const icon = createPlaneIcon(ac.heading, false, 'cubesat');
-                const popup = `<div class="popup-custom">
-                    <h3>${ac.callsign || '---'}</h3>
-                    <p><b>ICAO:</b> ${ac.icao}</p>
-                    <p><b>ALT:</b> ${Math.round((ac.altitude||0)*0.3048)} m · <b>SRC:</b> CUBESAT</p>
-                </div>`;
-
-                if (aircraftMarkers[ac.icao]) {
-                    aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
-                    aircraftMarkers[ac.icao].setIcon(icon);
-                    aircraftMarkers[ac.icao].getPopup().setContent(popup);
-                } else {
-                    aircraftMarkers[ac.icao] = L.marker([ac.latitude, ac.longitude], { icon })
-                        .bindPopup(popup).addTo(map);
-                }
-            }
-        });
-    }
 
     // CubeSat Health
     const h = data.cubesat_health;

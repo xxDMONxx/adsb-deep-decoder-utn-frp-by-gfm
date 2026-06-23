@@ -18,6 +18,7 @@
     --green: #34d399;
     --amber: #fbbf24;
     --red: #f87171;
+    --purple: #c084fc;
     --font-ui: 'Rajdhani', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 }
@@ -329,6 +330,7 @@ td {
 .ac-dead { color: var(--red); font-weight: 600; }
 .src-gnd { color: var(--cyan); }
 .src-sat { color: var(--green); }
+.src-both { color: var(--purple); }
 
 /* ==========================================================================
    PANEL FOOTER
