@@ -3,89 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LITORAL-RADAR-FRP | ADS-B Dashboard</title>
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <!-- Leaflet CSS -->
+    <title>LITORAL-RADAR-FRP | ADS-B Ground Station</title>
+    <meta name="description" content="ADS-B real-time aircraft tracking dashboard - AERO-LITORAL 26, UTN-FRP">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div id="app-container">
-        <!-- Sidebar -->
-        <aside id="sidebar">
-            <header>
-                <div class="logo">
-                    <div class="radar-icon"></div>
-                    <h1>LITORAL-RADAR-FRP</h1>
-                </div>
-                <p class="subtitle">UTN-FRP | Testbench ADS-B</p>
-                
-                <div class="stats-panel">
-                    <div class="stat-box">
-                        <span class="stat-value" id="stat-active">0</span>
-                        <span class="stat-label">Aeronaves</span>
-                    </div>
-                    <div class="stat-box">
-                        <span class="stat-value" id="stat-msg">0</span>
-                        <span class="stat-label">Msg Totales</span>
-                    </div>
-                </div>
 
-                <div class="cubesat-health">
-                    <h3>🛰️ CubeSat TM <span id="cs-status" class="cs-badge offline">OFFLINE</span></h3>
-                    <div class="health-grid">
-                        <div class="health-item">⚡ Vbat: <b id="cs-vbat">---</b> V</div>
-                        <div class="health-item">🌡️ Temp: <b id="cs-temp">---</b> °C</div>
-                        <div class="health-item">📐 Pitch: <b id="cs-pitch">---</b>°</div>
-                        <div class="health-item">📐 Roll: <b id="cs-roll">---</b>°</div>
-                    </div>
-                </div>
-                
-                <div class="actions">
-                    <button id="btn-export" class="btn primary">📥 Exportar CSV</button>
-                    <button id="btn-geolocate" class="btn secondary">📍 Mi Ubicación</button>
-                </div>
-            </header>
+    <!-- Top Bar -->
+    <nav id="topbar">
+        <div class="topbar-left">
+            <div class="logo-mark"></div>
+            <h1>LITORAL-RADAR<span class="accent">FRP</span></h1>
+            <span class="separator">|</span>
+            <span class="status-indicator" id="conn-status">SYS.ONLINE</span>
+        </div>
+        <div class="topbar-right">
+            <div class="stat-chip">
+                <span class="stat-label">TRK</span>
+                <span class="stat-value" id="stat-active">000</span>
+            </div>
+            <div class="stat-chip">
+                <span class="stat-label">MSG</span>
+                <span class="stat-value" id="stat-msg">00000</span>
+            </div>
+            <button id="btn-geolocate" class="topbar-btn" title="Detectar ubicación de la base terrena">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
+                <span class="btn-label">LOCATE</span>
+            </button>
+            <button id="btn-export" class="topbar-btn" title="Exportar datos a CSV">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span class="btn-label">CSV</span>
+            </button>
+        </div>
+    </nav>
 
-            <div class="table-container">
+    <!-- Main Content -->
+    <div id="workspace">
+
+        <!-- Map (protagonist) -->
+        <div id="map-area">
+            <div id="map"></div>
+            <!-- CubeSat floating widget -->
+            <div id="cubesat-widget">
+                <div class="widget-title">
+                    <span>🛰 CUBESAT</span>
+                    <span id="cs-status" class="cs-badge offline">OFFLINE</span>
+                </div>
+                <div class="widget-grid">
+                    <div class="widget-cell"><span class="wl">VBAT</span><span class="wv" id="cs-vbat">--.--</span><span class="wu">V</span></div>
+                    <div class="widget-cell"><span class="wl">TEMP</span><span class="wv" id="cs-temp">--.-</span><span class="wu">°C</span></div>
+                    <div class="widget-cell"><span class="wl">PTCH</span><span class="wv" id="cs-pitch">--.-</span><span class="wu">°</span></div>
+                    <div class="widget-cell"><span class="wl">ROLL</span><span class="wv" id="cs-roll">--.-</span><span class="wu">°</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aircraft Table -->
+        <div id="table-panel">
+            <div class="table-header-bar">
+                <span class="table-title">TRACKED AIRCRAFT</span>
+                <span class="table-count" id="table-count">0 targets</span>
+            </div>
+            <div class="table-scroll">
                 <table id="aircraft-table">
                     <thead>
                         <tr>
-                            <th>Vuelo</th>
+                            <th>CALLSIGN</th>
                             <th>ICAO</th>
-                            <th>Alt (m)</th>
-                            <th>Vel (km/h)</th>
-                            <th>Estado</th>
+                            <th>ALT (m)</th>
+                            <th>SPD (km/h)</th>
+                            <th>HDG</th>
+                            <th>POSITION</th>
+                            <th>SRC</th>
+                            <th>STATUS</th>
                         </tr>
                     </thead>
-                    <tbody id="aircraft-list">
-                        <!-- Llenado dinámicamente -->
-                    </tbody>
+                    <tbody id="aircraft-list"></tbody>
                 </table>
             </div>
-            
-            <footer>
-                <p>Status: <span id="conn-status" class="status-indicator online">● LIVE</span></p>
-                <div class="dev-credits">
-                    <p>Dev: Moreira, G.F. | v3.2 Web</p>
-                    <div class="social-links">
-                        <a href="https://github.com/xxDMONxx" target="_blank" title="GitHub">GitHub</a> | 
-                        <a href="https://www.linkedin.com/in/moreiragf/" target="_blank" title="LinkedIn">LinkedIn</a>
-                    </div>
-                </div>
-            </footer>
-        </aside>
-
-        <!-- Mapa -->
-        <main id="map-container">
-            <div id="map"></div>
-            <!-- Crosshair para el centro del radar -->
-            <div id="radar-center"></div>
-        </main>
+        </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Footer -->
+    <footer id="app-footer">
+        <span>AERO-LITORAL 26 · UTN-FRP · Moreira G.F.</span>
+        <div class="footer-links">
+            <a href="https://github.com/xxDMONxx" target="_blank">GitHub</a>
+            <a href="https://www.linkedin.com/in/moreiragf/" target="_blank">LinkedIn</a>
+        </div>
+    </footer>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="js/app.js"></script>
 </body>

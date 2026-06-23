@@ -1,3 +1,16 @@
+"""
+LITORAL-RADAR-FRP - Simulador de Telemetría CubeSat
+===================================================================
+Este script simula el enlace de bajada (downlink) de un CubeSat enviando paquetes JSON a través 
+de UDP (puerto 5556). Su objetivo principal es emular el comportamiento del segmento espacial 
+para probar y validar la respuesta del Backend (adsb_decoder.py) sin necesidad de tener el hardware real.
+
+Genera de manera aleatoria fluctuaciones en:
+- El voltaje de batería (VBAT).
+- Temperatura (TEMP) y parámetros de actitud (Pitch, Roll, Yaw).
+- Emite un conjunto estático de tramas crudas ADS-B simuladas para evaluar la capacidad 
+  de decodificación del backend y su integración en el Frontend Web.
+"""
 import socket
 import json
 import time

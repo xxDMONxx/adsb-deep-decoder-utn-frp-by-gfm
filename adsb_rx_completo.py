@@ -7,6 +7,19 @@
 # GNU Radio Python Flow Graph
 # Title: Recepcion ADS-B (AERO-LITORAL 26)
 # GNU Radio version: 3.10.12.0
+#
+# LITORAL-RADAR-FRP - Capa Física (SDR Flowgraph)
+# ===================================================================
+# Este código fue autogenerado por GNU Radio Companion y luego modificado
+# para integrarse en el proyecto LITORAL-RADAR-FRP. Su propósito es:
+# 1. Conectarse a un hardware SDR (ej. RTL-SDR) vía la librería SoapySDR a 1090 MHz.
+# 2. Filtrar, demodular y extraer los pulsos de la señal de radiofrecuencia.
+# 3. Empaquetar los pulsos en tramas usando `gnuradio.adsb` (Framer).
+# 4. Publicar las tramas crudas resultantes en un socket ZMQ (TCP puerto 5555) 
+#    para que el script `adsb_decoder.py` las recoja y procese en tiempo real.
+#
+# Además, incluye bloques personalizados (como `rf_monitor`) para análisis de ruido
+# y un ajuste adaptativo del umbral de detección según la calidad de la señal.
 
 from PyQt5 import Qt
 from gnuradio import qtgui

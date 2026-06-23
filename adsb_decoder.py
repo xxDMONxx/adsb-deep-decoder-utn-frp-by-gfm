@@ -3,22 +3,29 @@
 AERO-LITORAL 26 - ADS-B / Mode-S Deep Decoder v2.0
 Testbench terrestre para receptor CubeSat 1U
 
-Este script suscribe a un flujo de tramas ADS-B/Mode-S crudas publicadas
-por GNU Radio via ZMQ, decodifica TODOS los Downlink Formats y Type Codes
-soportados, y presenta un análisis profundo de cada trama recibida.
+LITORAL-RADAR-FRP - Módulo de Decodificación ADS-B (Backend Central)
+===================================================================
+Este script actúa como el "cerebro" del sistema de radar. Fue diseñado para:
+1. Recibir tramas hexadecimales en bruto (raw frames) provenientes del SDR (GNU Radio) vía ZMQ en el puerto 5555.
+2. Recibir telemetría simulada (o real) de un CubeSat vía UDP en el puerto 5556.
+3. Procesar y decodificar estas tramas utilizando la librería `pyModeS` (pyModeS v3 API).
+4. Mantener un estado persistente de cada aeronave detectada (AircraftState), calculando
+   su posición exacta mediante el algoritmo CPR (Compact Position Reporting).
+5. Exponer esta información a la Interfaz de Usuario (TUI y Web) para su visualización.
 
-Compatible con pyModeS v3.x (API unificada pyModeS.decode())
+Componentes principales de la Arquitectura:
+- `CPRState`: Clase auxiliar que maneja la lógica compleja de pares par/impar para deducir latitud y longitud.
+- `AircraftState`: Representa a un avión individual en el espacio aéreo, guardando su último reporte.
+- `ADSBDecoder`: La clase orquestadora. Gestiona diccionarios de aeronaves y coordina toda la decodificación.
+- `zmq_listener_loop` / `udp_cubesat_listener`: Hilos independientes que actúan como escuchas asíncronos.
 
-Características:
+Características Técnicas:
     - Validación CRC de todos los mensajes
     - Soporte DF0, DF4, DF5, DF11, DF16, DF17, DF18, DF20, DF21
     - Decodificación completa de TC 1-4, 5-8, 9-18, 19, 20-22, 28, 29, 31
     - CPR global (par+impar) usando pyModeS.position.airborne_position_pair
-    - Análisis profundo de tramas (hex, binario, campos anotados)
     - Tracking por aeronave con estado acumulado
-    - Estadísticas en tiempo real
-    - Expiración automática de estados
-    - Salida con colores ANSI
+    - Estadísticas en tiempo real y Expiración automática de estados
 
 Dependencias:
     pip install pyzmq pyModeS>=3.0
@@ -36,11 +43,15 @@ except ImportError:
 import pyModeS
 from pyModeS.position import airborne_position_pair
 from pyModeS._bits import extract_unsigned
+
 import sys
-import os
-from time import time, strftime, localtime, sleep
-from typing import Optional, Dict, Tuple, Any
+import argparse
+import socket
+import threading
+from typing import Dict, Any, Optional
+from time import time, sleep
 from collections import defaultdict
+import zmq
 import msvcrt
 
 try:
@@ -325,6 +336,8 @@ class ADSBDecoder:
 
     def __init__(self):
         self.aircraft: Dict[str, AircraftState] = {}
+        self.cubesat_aircraft: Dict[str, AircraftState] = {}
+        self.cubesat_health: dict = {}
         self.stats = {
             'total_received': 0,
             'crc_ok': 0,
@@ -662,6 +675,70 @@ class ADSBDecoder:
         result['field_map'] = self._build_field_map(hex_msg, df, tc, decoded, result)
 
         return result
+
+    def process_cubesat_telemetry(self, payload: dict):
+        """Procesa datos de telemetría provenientes del simulador/CubeSat."""
+        health = payload.get('health', {})
+        attitude = payload.get('attitude', {})
+        
+        self.cubesat_health['status'] = health.get('status', 'OFFLINE')
+        self.cubesat_health['vbat'] = health.get('vbat', 0.0)
+        self.cubesat_health['temp'] = health.get('temp', 0.0)
+        self.cubesat_health['pitch'] = attitude.get('pitch', 0.0)
+        self.cubesat_health['roll'] = attitude.get('roll', 0.0)
+        self.cubesat_health['yaw'] = attitude.get('yaw', 0.0)
+        self.cubesat_health['last_seen'] = time()
+        
+        icao = payload.get('icao')
+        raw_frame = payload.get('raw_frame')
+        
+        if not icao or not raw_frame:
+            return
+            
+        if icao not in self.cubesat_aircraft:
+            self.cubesat_aircraft[icao] = AircraftState(icao)
+            
+        ac = self.cubesat_aircraft[icao]
+        ac.last_seen = time()
+        ac.msg_count += 1
+        
+        try:
+            import pyModeS
+            decoded = pyModeS.decode(raw_frame)
+            
+            if decoded.get('altitude') is not None:
+                ac.altitude_baro = decoded.get('altitude')
+            if decoded.get('callsign'):
+                ac.callsign = decoded.get('callsign').strip('_')
+            
+            tc = decoded.get('typecode')
+            if tc == 19:
+                gs = decoded.get('groundspeed')
+                airspeed = decoded.get('airspeed')
+                track = decoded.get('track')
+                heading = decoded.get('heading')
+                vr = decoded.get('vertical_rate')
+                if gs is not None:
+                    ac.speed = gs
+                elif airspeed is not None:
+                    ac.speed = airspeed
+                angle = track if track is not None else heading
+                if angle is not None:
+                    ac.heading = angle
+                if vr is not None:
+                    ac.vertical_rate = vr
+            
+            cpr_fmt = decoded.get('cpr_format')
+            cpr_lat = decoded.get('cpr_lat')
+            cpr_lon = decoded.get('cpr_lon')
+            now = time()
+            if (cpr_fmt is not None and cpr_lat is not None and cpr_lon is not None):
+                pos = ac.cpr.update(cpr_lat, cpr_lon, cpr_fmt, now)
+                if pos is not None:
+                    ac.latitude = pos[0]
+                    ac.longitude = pos[1]
+        except Exception:
+            pass
 
     # =========================================================================
     # Análisis profundo — Mapa de campos

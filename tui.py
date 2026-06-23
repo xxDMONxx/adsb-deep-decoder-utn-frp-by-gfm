@@ -1,3 +1,14 @@
+"""
+LITORAL-RADAR-FRP - Módulo de Interfaz y Exportación (TUI / JSON)
+===================================================================
+Este script tiene dos responsabilidades principales:
+1. Renderizar una Interfaz de Usuario en la Terminal (TUI) utilizando secuencias de escape ANSI.
+   Permite al operador visualizar las estadísticas de decodificación y el estado de las aeronaves
+   directamente en la consola sin necesidad de un navegador web.
+2. Serializar el estado actual del decodificador (`ADSBDecoder`) y volcarlo periódicamente
+   en el archivo `web/data.json`. Este archivo es consumido asíncronamente por el Frontend Web
+   (app.js) para renderizar el mapa interactivo y el panel de telemetría táctico.
+"""
 import os
 import sys
 import math
@@ -218,6 +229,10 @@ class TUIDashboard:
 
     def _export_json(self, decoder):
         """Exporta el estado actual a web/data.json para el LITORAL-RADAR-FRP."""
+        health = getattr(decoder, 'cubesat_health', {})
+        if time() - health.get('last_seen', 0) > 5.0:
+            health['status'] = 'OFFLINE'
+            
         data = {
             "timestamp": time(),
             "stats": {
@@ -228,7 +243,7 @@ class TUIDashboard:
             },
             "aircraft": [],
             "cubesat_aircraft": [],
-            "cubesat_health": getattr(decoder, 'cubesat_health', {})
+            "cubesat_health": health
         }
         
         # Filtrar aeronaves reales de Tierra

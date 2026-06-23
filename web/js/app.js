@@ -1,45 +1,53 @@
-// Coordenadas Iniciales (Aprox centro de Argentina/Santa Fe)
-const MAP_CENTER = [-31.6333, -60.7000]; // Latitud/Longitud de UTN-FRP o Santa Fe
+/**
+ * LITORAL-RADAR-FRP — Frontend Application Logic
+ * ================================================
+ * Polling de data.json cada 1s, renderizado de tabla y mapa Leaflet.
+ * Integra datos de estación terrena (GND/SDR) y CubeSat (SAT).
+ *
+ * Flujo: data.json (generado por tui.py) → fetch → processData → render
+ */
+
+// ─── Configuración Inicial ─────────────────────────────────────────────────
+const MAP_CENTER = [-31.6333, -60.7000];
 const MAP_ZOOM = 6;
 
-// Inicializar Mapa
-const map = L.map('map', {
-    zoomControl: false
-}).setView(MAP_CENTER, MAP_ZOOM);
-
+const map = L.map('map', { zoomControl: false }).setView(MAP_CENTER, MAP_ZOOM);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-// Capa Base: CartoDB Dark Matter (Estilo oscuro y limpio)
+// Capa oscura CartoDB — coherente con el diseño del dashboard
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 20
 }).addTo(map);
 
-// Marcador de la antena (Radar)
-const radarIcon = L.divIcon({
-    className: 'radar-center-icon',
-    html: '<div style="width:12px; height:12px; background:#10b981; border-radius:50%; border:2px solid #fff; box-shadow:0 0 10px #10b981;"></div>',
-    iconSize: [12, 12],
-    iconAnchor: [6, 6]
+// ─── Marcador de la Base Terrena ────────────────────────────────────────────
+const baseIcon = L.divIcon({
+    className: 'base-marker',
+    html: '<div style="width:14px;height:14px;background:#22d3ee;border-radius:50%;border:2px solid #fff;box-shadow:0 0 12px #22d3ee;"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
 });
-L.marker(MAP_CENTER, { icon: radarIcon }).addTo(map).bindPopup("<b>Estación Terrena Litoral 26</b><br>UTN-FRP");
+let baseMarker = L.marker(MAP_CENTER, { icon: baseIcon })
+    .addTo(map)
+    .bindPopup("<div class='popup-custom'><h3>BASE TERRENA</h3><p>UTN-FRP · Santa Fe</p></div>");
 
-// Variables globales
+// ─── Estado Global ──────────────────────────────────────────────────────────
 let aircraftMarkers = {};
 let aircraftDataCache = [];
 
-// Ícono de avión SVG dinámico
-function createPlaneIcon(heading, isLost, source="ground") {
-    let color = isLost ? '#f59e0b' : '#3b82f6'; // Azul = Tierra, Naranja = Perdido
-    if (source === "cubesat") {
-        color = '#10b981'; // Verde = CubeSat
-    }
-    const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" style="transform: rotate(${heading || 0}deg);">
-            <path d="M21,16V14L13,9V3.5A1.5,1.5 0 0,0 11.5,2A1.5,1.5 0 0,0 10,3.5V9L2,14V16L10,13.5V19L8,20.5V22L11.5,21L15,22V20.5L13,19V13.5L21,16Z" fill="${color}" stroke="#fff" stroke-width="1"/>
-        </svg>
-    `;
+// ─── Icono SVG Wireframe para Aeronaves ─────────────────────────────────────
+function createPlaneIcon(heading, isLost, source) {
+    let color = isLost ? '#fbbf24' : '#22d3ee';
+    if (source === 'cubesat') color = '#34d399';
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28"
+        style="transform:rotate(${heading || 0}deg)">
+        <polygon points="12,2 14,14 22,16 22,18 13,17 12,22 11,17 2,18 2,16 10,14"
+            fill="rgba(0,0,0,0.4)" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="1.5" fill="${color}"/>
+    </svg>`;
+
     return L.divIcon({
         className: 'plane-icon',
         html: svg,
@@ -49,162 +57,145 @@ function createPlaneIcon(heading, isLost, source="ground") {
     });
 }
 
-// Función principal de actualización (Polling)
+// ─── Polling Principal ──────────────────────────────────────────────────────
 async function updateRadarData() {
     try {
-        // Agregamos un query param aleatorio para evitar caché del navegador
-        const response = await fetch(`data.json?t=${new Date().getTime()}`);
-        if (!response.ok) throw new Error("No data");
-        
-        const data = await response.json();
-        processData(data);
-        
-        document.getElementById('conn-status').textContent = '● LIVE';
+        const res = await fetch(`data.json?t=${Date.now()}`);
+        if (!res.ok) throw new Error('No data');
+        processData(await res.json());
+
+        document.getElementById('conn-status').textContent = 'SYS.ONLINE';
         document.getElementById('conn-status').className = 'status-indicator online';
-    } catch (err) {
-        console.error("Error obteniendo datos del radar:", err);
-        document.getElementById('conn-status').textContent = '● OFFLINE';
+    } catch (e) {
+        console.error('Radar fetch error:', e);
+        document.getElementById('conn-status').textContent = 'SYS.OFFLINE';
         document.getElementById('conn-status').className = 'status-indicator offline';
     }
 }
 
+// ─── Procesamiento de Datos ─────────────────────────────────────────────────
 function processData(data) {
     aircraftDataCache = data.aircraft || [];
-    
-    // Estadísticas
-    const activeCount = aircraftDataCache.filter(ac => ac.age < 60).length;
-    document.getElementById('stat-active').textContent = activeCount;
-    document.getElementById('stat-msg').textContent = data.stats.total_received;
 
-    // Actualizar Tabla
+    // Estadísticas
+    const active = aircraftDataCache.filter(a => a.age < 60).length;
+    document.getElementById('stat-active').textContent = active.toString().padStart(3, '0');
+    document.getElementById('stat-msg').textContent = data.stats.total_received.toString().padStart(5, '0');
+    document.getElementById('table-count').textContent = `${aircraftDataCache.length} targets`;
+
     const tbody = document.getElementById('aircraft-list');
     tbody.innerHTML = '';
-    
-    // Lista de ICAOs en este frame para eliminar marcadores obsoletos
     const currentIcaos = new Set();
 
+    // ── Renderizado de cada aeronave ──
     aircraftDataCache.forEach(ac => {
         currentIcaos.add(ac.icao);
-        
-        // --- 1. Tabla ---
-        let statusClass = "ac-dead";
-        let statusText = "DEAD";
-        if (ac.age < 30) { statusClass = "ac-live"; statusText = "LIVE"; }
-        else if (ac.age < 120) { statusClass = "ac-lost"; statusText = "LOST"; }
 
-        // Si el ICAO también viene del cubesat, lo marcamos en la tabla
-        let isFromCubeSat = false;
+        // Estado
+        let statusClass = 'ac-dead', statusText = 'DEAD';
+        if (ac.age < 30)       { statusClass = 'ac-live'; statusText = 'LIVE'; }
+        else if (ac.age < 120) { statusClass = 'ac-lost'; statusText = 'LOST'; }
+
+        // ¿Viene también del CubeSat?
+        let isSat = false;
         if (data.cubesat_aircraft) {
-            isFromCubeSat = data.cubesat_aircraft.some(c => c.icao === ac.icao);
-        }
-        
-        let callsignHtml = `<b>${ac.callsign || '---'}</b>`;
-        if (isFromCubeSat) {
-            callsignHtml += ` <span style="font-size:0.6rem; background:var(--live-green); color:#111; padding:2px 4px; border-radius:3px;">+SAT</span>`;
+            isSat = data.cubesat_aircraft.some(c => c.icao === ac.icao);
         }
 
+        // Fila de tabla
         const tr = document.createElement('tr');
+        const cs = ac.callsign || '---';
+        const alt = ac.altitude !== null ? Math.round(ac.altitude * 0.3048) : '---';
+        const spd = ac.speed !== null ? Math.round(ac.speed * 1.852) : '---';
+        const hdg = ac.heading !== null ? Math.round(ac.heading) + '°' : '---';
+        const lat = ac.latitude !== null ? ac.latitude.toFixed(4) : '---';
+        const lon = ac.longitude !== null ? ac.longitude.toFixed(4) : '---';
+        const srcClass = isSat ? 'src-sat' : 'src-gnd';
+        const srcText = isSat ? 'SAT' : 'GND';
+
         tr.innerHTML = `
-            <td>${callsignHtml}</td>
+            <td>${cs}</td>
             <td>${ac.icao}</td>
-            <td>${ac.altitude !== null ? Math.round(ac.altitude * 0.3048) : '---'}</td>
-            <td>${ac.speed !== null ? Math.round(ac.speed * 1.852) : '---'}</td>
+            <td>${alt}</td>
+            <td>${spd}</td>
+            <td>${hdg}</td>
+            <td>${lat}, ${lon}</td>
+            <td><span class="${srcClass}">${srcText}</span></td>
             <td class="${statusClass}">${statusText}</td>
         `;
-        
-        // Al hacer click en la tabla, centrar el mapa
+
         tr.addEventListener('click', () => {
             if (ac.latitude && ac.longitude) {
                 map.setView([ac.latitude, ac.longitude], 10);
-                if (aircraftMarkers[ac.icao]) {
-                    aircraftMarkers[ac.icao].openPopup();
-                }
+                if (aircraftMarkers[ac.icao]) aircraftMarkers[ac.icao].openPopup();
             }
         });
         tbody.appendChild(tr);
 
-        // --- 2. Mapa (Aviones de Tierra) ---
+        // Marcador en mapa
         if (ac.latitude && ac.longitude) {
-            const isLost = ac.age > 30;
-            const icon = createPlaneIcon(ac.heading, isLost, "ground");
-            
-            const popupContent = `
-                <div class="popup-custom">
-                    <h3>✈️ ${ac.callsign || 'Desconocido'}</h3>
-                    <p><b>ICAO:</b> ${ac.icao}</p>
-                    <p><b>Origen:</b> Estación Terrena (SDR)</p>
-                    <p><b>Altitud:</b> ${Math.round(ac.altitude * 0.3048)} m</p>
-                    <p><b>Velocidad:</b> ${Math.round(ac.speed * 1.852)} km/h</p>
-                    <p><b>Rumbo:</b> ${ac.heading ? Math.round(ac.heading) + '°' : '---'}</p>
-                </div>
-            `;
+            const icon = createPlaneIcon(ac.heading, ac.age > 30, 'ground');
+            const popup = `<div class="popup-custom">
+                <h3>${cs}</h3>
+                <p><b>ICAO:</b> ${ac.icao}</p>
+                <p><b>ALT:</b> ${alt} m · <b>SPD:</b> ${spd} km/h</p>
+                <p><b>HDG:</b> ${hdg} · <b>SRC:</b> GROUND_SDR</p>
+            </div>`;
 
             if (aircraftMarkers[ac.icao]) {
                 aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
                 aircraftMarkers[ac.icao].setIcon(icon);
-                aircraftMarkers[ac.icao].getPopup().setContent(popupContent);
+                aircraftMarkers[ac.icao].getPopup().setContent(popup);
             } else {
-                const marker = L.marker([ac.latitude, ac.longitude], { icon: icon })
-                    .bindPopup(popupContent)
-                    .addTo(map);
-                aircraftMarkers[ac.icao] = marker;
+                aircraftMarkers[ac.icao] = L.marker([ac.latitude, ac.longitude], { icon })
+                    .bindPopup(popup).addTo(map);
             }
         }
     });
 
-    // --- 3. Mapa (Aviones Únicos de CubeSat) ---
+    // ── CubeSat-only aircraft ──
     if (data.cubesat_aircraft) {
         data.cubesat_aircraft.forEach(ac => {
-            // Si no lo tenemos dibujado ya por Tierra, lo dibujamos por Satélite
-            if (!currentIcaos.has(ac.icao)) {
+            if (!currentIcaos.has(ac.icao) && ac.latitude && ac.longitude) {
                 currentIcaos.add(ac.icao);
-                
-                if (ac.latitude && ac.longitude) {
-                    const icon = createPlaneIcon(ac.heading, false, "cubesat");
-                    const popupContent = `
-                        <div class="popup-custom">
-                            <h3>🛰️ ${ac.callsign || 'Desconocido'}</h3>
-                            <p><b>ICAO:</b> ${ac.icao}</p>
-                            <p><b>Origen:</b> CubeSat TM</p>
-                            <p><b>Altitud:</b> ${Math.round(ac.altitude * 0.3048)} m</p>
-                            <p><b>Velocidad:</b> ${Math.round(ac.speed * 1.852)} km/h</p>
-                        </div>
-                    `;
+                const icon = createPlaneIcon(ac.heading, false, 'cubesat');
+                const popup = `<div class="popup-custom">
+                    <h3>${ac.callsign || '---'}</h3>
+                    <p><b>ICAO:</b> ${ac.icao}</p>
+                    <p><b>ALT:</b> ${Math.round((ac.altitude||0)*0.3048)} m · <b>SRC:</b> CUBESAT_TM</p>
+                </div>`;
 
-                    if (aircraftMarkers[ac.icao]) {
-                        aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
-                        aircraftMarkers[ac.icao].setIcon(icon);
-                        aircraftMarkers[ac.icao].getPopup().setContent(popupContent);
-                    } else {
-                        const marker = L.marker([ac.latitude, ac.longitude], { icon: icon })
-                            .bindPopup(popupContent)
-                            .addTo(map);
-                        aircraftMarkers[ac.icao] = marker;
-                    }
+                if (aircraftMarkers[ac.icao]) {
+                    aircraftMarkers[ac.icao].setLatLng([ac.latitude, ac.longitude]);
+                    aircraftMarkers[ac.icao].setIcon(icon);
+                    aircraftMarkers[ac.icao].getPopup().setContent(popup);
+                } else {
+                    aircraftMarkers[ac.icao] = L.marker([ac.latitude, ac.longitude], { icon })
+                        .bindPopup(popup).addTo(map);
                 }
             }
         });
     }
 
-    // Actualizar Panel de Salud del CubeSat
-    if (data.cubesat_health) {
-        const h = data.cubesat_health;
-        const statusBadge = document.getElementById("cs-status");
-        
-        if (h.status === "OFFLINE") {
-            statusBadge.className = "cs-badge offline";
-            statusBadge.textContent = "OFFLINE";
-        } else {
-            statusBadge.className = "cs-badge online";
-            statusBadge.textContent = "ONLINE";
-            document.getElementById("cs-vbat").textContent = h.vbat.toFixed(2);
-            document.getElementById("cs-temp").textContent = h.temp.toFixed(1);
-            document.getElementById("cs-pitch").textContent = h.pitch.toFixed(1);
-            document.getElementById("cs-roll").textContent = h.roll.toFixed(1);
-        }
+    // ── CubeSat Health Panel ──
+    const h = data.cubesat_health;
+    if (h && Object.keys(h).length > 0 && h.status !== 'OFFLINE') {
+        document.getElementById('cs-status').className = 'cs-badge online';
+        document.getElementById('cs-status').textContent = 'ONLINE';
+        document.getElementById('cs-vbat').textContent = h.vbat !== undefined ? h.vbat.toFixed(2) : '--.--';
+        document.getElementById('cs-temp').textContent = h.temp !== undefined ? h.temp.toFixed(1) : '--.-';
+        document.getElementById('cs-pitch').textContent = h.pitch !== undefined ? h.pitch.toFixed(1) : '--.-';
+        document.getElementById('cs-roll').textContent = h.roll !== undefined ? h.roll.toFixed(1) : '--.-';
+    } else {
+        document.getElementById('cs-status').className = 'cs-badge offline';
+        document.getElementById('cs-status').textContent = 'OFFLINE';
+        document.getElementById('cs-vbat').textContent = '--.--';
+        document.getElementById('cs-temp').textContent = '--.-';
+        document.getElementById('cs-pitch').textContent = '--.-';
+        document.getElementById('cs-roll').textContent = '--.-';
     }
 
-    // Limpiar marcadores viejos del mapa
+    // Limpiar marcadores expirados
     Object.keys(aircraftMarkers).forEach(icao => {
         if (!currentIcaos.has(icao)) {
             map.removeLayer(aircraftMarkers[icao]);
@@ -213,76 +204,55 @@ function processData(data) {
     });
 }
 
-// Lógica de Exportación CSV
+// ─── Exportación CSV ────────────────────────────────────────────────────────
 document.getElementById('btn-export').addEventListener('click', () => {
-    if (aircraftDataCache.length === 0) {
-        alert("No hay datos para exportar.");
-        return;
-    }
+    if (!aircraftDataCache.length) { alert('No hay datos para exportar.'); return; }
 
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "ICAO,Vuelo,Altitud(m),Velocidad(km/h),Rumbo(deg),Latitud,Longitud,UltimaVez(s)\n";
+    let csv = 'data:text/csv;charset=utf-8,';
+    csv += 'ICAO,Callsign,Alt(m),Spd(km/h),Hdg(deg),Lat,Lon,Age(s)\n';
 
     aircraftDataCache.forEach(ac => {
         const alt = ac.altitude !== null ? Math.round(ac.altitude * 0.3048) : '';
         const spd = ac.speed !== null ? Math.round(ac.speed * 1.852) : '';
         const hdg = ac.heading !== null ? Math.round(ac.heading) : '';
-        const lat = ac.latitude !== null ? ac.latitude : '';
-        const lon = ac.longitude !== null ? ac.longitude : '';
-        const row = `${ac.icao},${ac.callsign || ''},${alt},${spd},${hdg},${lat},${lon},${Math.round(ac.age)}`;
-        csvContent += row + "\n";
+        const lat = ac.latitude ?? '';
+        const lon = ac.longitude ?? '';
+        csv += `${ac.icao},${ac.callsign||''},${alt},${spd},${hdg},${lat},${lon},${Math.round(ac.age)}\n`;
     });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `litoral_radar_export_${new Date().getTime()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement('a');
+    a.href = encodeURI(csv);
+    a.download = `litoral_radar_${Date.now()}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
 });
 
-// Lógica de Mi Ubicación (Geolocalización)
-let userLocationMarker = null;
-
+// ─── Geolocalización ────────────────────────────────────────────────────────
 document.getElementById('btn-geolocate').addEventListener('click', () => {
-    if (!navigator.geolocation) {
-        alert("Tu navegador no soporta geolocalización.");
-        return;
-    }
-    
-    document.getElementById('btn-geolocate').textContent = "📍 Ubicando...";
-    
+    if (!navigator.geolocation) { alert('Geolocalización no soportada.'); return; }
+
+    const label = document.querySelector('#btn-geolocate .btn-label');
+    label.textContent = '...';
+
     navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            
+        pos => {
+            const { latitude: lat, longitude: lon } = pos.coords;
             map.flyTo([lat, lon], 10);
-            
-            if (userLocationMarker) {
-                userLocationMarker.setLatLng([lat, lon]);
-            } else {
-                userLocationMarker = L.circleMarker([lat, lon], {
-                    radius: 6,
-                    fillColor: "#3b82f6",
-                    color: "#ffffff",
-                    weight: 2,
-                    opacity: 1,
-                    fillOpacity: 1
-                }).addTo(map).bindPopup("<b>Mi Ubicación</b>");
-            }
-            document.getElementById('btn-geolocate').textContent = "📍 Mi Ubicación";
+            baseMarker.setLatLng([lat, lon]);
+            baseMarker.getPopup().setContent(
+                "<div class='popup-custom'><h3>BASE TERRENA</h3><p>Ubicación detectada</p></div>"
+            );
+            label.textContent = 'LOCATE';
         },
-        (error) => {
-            console.error("Error obteniendo ubicación:", error);
-            alert("No se pudo obtener la ubicación. Revisá los permisos del navegador.");
-            document.getElementById('btn-geolocate').textContent = "📍 Mi Ubicación";
+        err => {
+            console.error('Geolocation error:', err);
+            label.textContent = 'LOCATE';
+            // No mostramos alert() — simplemente logueamos y reseteamos el botón.
+            // El usuario puede reintentar inmediatamente.
         },
-        { enableHighAccuracy: true, timeout: 5000 }
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
     );
 });
 
-// Iniciar Polling a 1 FPS
+// ─── Iniciar ────────────────────────────────────────────────────────────────
 setInterval(updateRadarData, 1000);
 updateRadarData();
